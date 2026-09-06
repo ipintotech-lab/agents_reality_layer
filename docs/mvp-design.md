@@ -33,9 +33,9 @@ real source  →  immutable observation  →  compile  →  World State + commit
 | Reality Git | append-only commits, entity-level diff, provenance links, snapshot reference, hash chain (no signatures) |
 | Store | single PostgreSQL instance (relational + JSONB) + object storage for raw payloads |
 | Policy/HITL | RBAC role templates (Operations, Support, Finance) + risk/cost thresholds + durable approval state machine |
-| Actions | 5–7 verified write operations (see §6) |
+| Actions | 1 real verified write operation end-to-end; 4–6 additional typed proposal/policy demos (see §6) |
 | Interfaces | Python SDK, REST API, MCP server exposing the 6 core tools |
-| Dashboard | read-only web UI: Reality, Conflicts, Agents, Approvals, History, Health |
+| Dashboard | read-only World State UI plus controlled operator workflows: Conflicts, Agents, Approvals, History, Health |
 | Onboarding | `reality init` → Observe-only workspace, connector read checks, bounded backfill, data-quality report |
 
 ### 1.3 Explicitly NOT in MVP
@@ -50,19 +50,19 @@ real source  →  immutable observation  →  compile  →  World State + commit
 
 ## 2. Success Criteria (exit checklist)
 
-The MVP is "done" when, on a live demo workspace:
+The MVP is "done" when, on a live investor-demo workspace:
 
 1. Three real connectors ingest observations; World State compiles and is queryable.
 2. An agent (LangGraph or Claude Agent SDK) reads state via MCP and proposes ≥3 of the
    action types.
 3. Policy engine returns `allowed` / `approval_required` / `denied` with a machine-readable
    reason for each.
-4. At least one action requires HITL, is approved in the dashboard, executes, and is
-   externally verified via read-after-write.
+4. One write action runs end-to-end: it requires HITL, is approved through the operator
+   workflow, executes, and is externally verified via read-after-write.
 5. Every state transition has a commit linked to actor, cause, evidence, and
    `schema_version`; the History view shows before/after diffs.
 6. A conflict (e.g. carrier says shipped, ERP says processing) appears in the conflict
-   queue with side-by-side evidence and one-click resolution.
+   queue with side-by-side evidence and a controlled resolution workflow.
 7. A `get_proof` call returns a proof bundle with an explicit assurance level.
 8. Baseline metrics (§10) are recorded for the demo period.
 
@@ -80,7 +80,7 @@ Single deployable backend (modular monolith) + worker + web UI.
 │   ├─ Agent Interface (get_world_state, query_entities, ...)     │
 │   ├─ Policy & Permission Engine (RBAC + risk/cost)             │
 │   ├─ Action Gateway + Verifier                                 │
-│   └─ Dashboard BFF (read-only)                                 │
+│   └─ Dashboard BFF (read-only state + workflow controls)       │
 └───────┬───────────────────────────────┬───────────────────────┘
         │                               │
 ┌───────▼─────────┐            ┌─────────▼─────────────────────┐
@@ -113,7 +113,7 @@ MVP.
 | Store | Durable truth + projection | PostgreSQL 16, SQLAlchemy, Alembic; row-level tenant scoping |
 | Object storage | Raw payloads, evidence | S3-compatible (MinIO local / Railway volume or bucket in prod) |
 | `reality-mcp` | MCP server exposing 6 tools | thin adapter over the SDK/API |
-| Dashboard | Read-only operator UI | Next.js (or server-rendered) — TBD, kept minimal |
+| Dashboard | Read-only World State UI + approval/conflict workflow controls | Next.js (or server-rendered) — TBD, kept minimal |
 | CLI | `reality init/connect/observe/serve` | Python (Typer) |
 
 *Deployment:* Railway. **Requires a persistent volume for PostgreSQL and object storage —
@@ -168,8 +168,14 @@ Each stage is independently versioned (`compiler_version`) and replayable from
 
 ## 6. Actions (MVP set)
 
-5–7 high-value Order-to-Cash operations, each with typed params, preconditions,
-idempotency key, and a postcondition verifier.
+Investor-proof MVP separates depth from breadth:
+
+- **Depth:** 1 real write action executes end-to-end with typed params, preconditions,
+  idempotency key, HITL approval when required, read-after-write verification, commit, and
+  proof bundle.
+- **Breadth:** 4–6 additional high-value actions are implemented as typed proposals with
+  policy decisions and demoable approval/risk rationale; they do not need production-grade
+  external execution before investor-demo exit.
 
 | Action | Target | Preconditions (example) | Verification | Default policy |
 | --- | --- | --- | --- | --- |
@@ -284,9 +290,9 @@ entities: `Order`, `OrderLine`, `Shipment`, `Package`, `Inventory`, `Product`/`S
 | 2 · History | `commit_log` + hash chain, change detection, `diff_since`, dashboard Reality + History views | auditability |
 | 3 · Conflicts | 2nd + 3rd connectors, conflict detection + resolution policy, conflict queue UI, resolution commits | conflicts are first-class |
 | 4 · Propose + Policy | Action envelopes, RBAC policy engine + fixtures, `propose_action`, `get_action_status`, dashboard Agents view | intent ≠ execution |
-| 5 · Act + Verify | Action Gateway, idempotency, 1 real write action end-to-end, verifier read-after-write, proof bundle + `get_proof` | the full loop |
-| 6 · HITL | Durable approval state machine, expiry/revalidation/supersede, Approvals UI, audit events | explicit human control |
-| 7 · Harden | Remaining 4–6 actions, MCP server packaging, metrics dashboard, security review, Railway deploy w/ persistent volume | demo-ready MVP |
+| 5 · HITL + Act + Verify | Durable approval state machine, Action Gateway, idempotency, 1 real write action end-to-end, verifier read-after-write, proof bundle + `get_proof`, Approvals UI | the full loop with explicit human control |
+| 6 · Demo Breadth | Remaining 4–6 actions as typed proposal/policy demos, controlled conflict resolution workflow, MCP server packaging, metrics dashboard | investor narrative breadth |
+| 7 · Harden | Security review, Railway deploy w/ persistent volume, demo data reset/runbook, latency and audit-completeness checks | demo-ready MVP |
 
 ## 14. Key Technical Decisions (MVP)
 
