@@ -38,4 +38,5 @@ likely be asked to wait for the Phase 0 scaffold.
 
 ## Code of conduct
 
-Be respectful and assume good faith. Harassment or abuse is not tolerated.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating you
+are expected to uphold it.
