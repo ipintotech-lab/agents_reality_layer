@@ -1,0 +1,45 @@
+name: Design proposal
+description: Propose or challenge an architecture / MVP design decision.
+labels: ["design"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph — what decision are you proposing or revisiting?
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: e.g. Reality Compiler, Reality Git commit envelope, policy engine, conflict resolution, ontology, storage.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current approach
+      description: What do the docs say today? Link the section.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Trade-offs
+      description: What gets better, what gets worse, what risk does this add?
+    validations:
+      required: true
+  - type: textarea
+    id: revisit
+    attributes:
+      label: Revisit trigger
+      description: If this is a "defer" decision, what future signal should make us reopen it?
+    validations:
+      required: false

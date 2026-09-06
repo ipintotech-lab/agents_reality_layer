@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a new capability for the Reality Layer.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What need or gap does this address? Who hits it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed capability
+      description: What should the system do?
+    validations:
+      required: true
+  - type: dropdown
+    id: mvp
+    attributes:
+      label: Timing
+      options:
+        - Belongs in the MVP
+        - Post-MVP / deferred
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact on architecture
+      description: Which layers/components does this touch (compiler, Reality Git, policy, gateway, connectors, interfaces)?
+    validations:
+      required: false

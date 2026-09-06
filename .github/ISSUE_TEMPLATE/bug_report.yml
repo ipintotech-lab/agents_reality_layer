@@ -1,0 +1,35 @@
+name: Bug report
+description: Something is wrong in the docs, or (once code exists) in the implementation.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: The project is in the design phase. Most bugs today are doc issues — wrong claims, broken links, inconsistencies between the architecture and MVP docs.
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: Describe the problem clearly.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: File and section, PR, or commit. e.g. docs/mvp-design.md §6
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else — logs, screenshots, related issues.
+    validations:
+      required: false
