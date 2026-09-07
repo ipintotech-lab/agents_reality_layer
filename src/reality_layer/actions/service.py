@@ -89,8 +89,10 @@ class ActionService:
             "approval_denied": ActionStatus.denied,
             "precondition_failed": ActionStatus.precondition_failed,
             "provider_accepted": ActionStatus.provider_accepted,
+            "verification_pending": ActionStatus.verification_pending,
             "verified": ActionStatus.verified,
             "verification_failed": ActionStatus.verification_failed,
+            "state_diverged": ActionStatus.state_diverged,
         }
         status = status_map.get(event.event_type)
         if status is not None:
@@ -194,30 +196,76 @@ class ActionService:
         self._check_tenant(action, tenant_id)
         return action.proposal
 
+    #: Verification outcomes that end the polling loop.
+    TERMINAL_VERIFICATION_STATUSES = frozenset(
+        {
+            ActionStatus.verified,
+            ActionStatus.verification_failed,
+            ActionStatus.state_diverged,
+        }
+    )
+
+    #: Statuses from which a verification attempt may still be made.
+    VERIFIABLE_STATUSES = frozenset(
+        {ActionStatus.provider_accepted, ActionStatus.verification_pending}
+    )
+
+    def pending_verifications(self) -> list[tuple[str, str]]:
+        """Return ``(tenant_id, action_id)`` pairs awaiting read-after-write verification."""
+        return [
+            (action.tenant_id, action_id)
+            for action_id, action in self._actions.items()
+            if action.decision.status in self.VERIFIABLE_STATUSES
+        ]
+
     def verify(
-        self, action_id: str, tenant_id: str, state: OrderState | None
+        self,
+        action_id: str,
+        tenant_id: str,
+        state: OrderState | None,
+        *,
+        is_final_attempt: bool = True,
     ) -> ActionDecision:
         action = self._get(action_id)
         self._check_tenant(action, tenant_id)
-        if action.decision.status != ActionStatus.provider_accepted:
+        if action.decision.status not in self.VERIFIABLE_STATUSES:
             raise ValueError("Only provider-accepted actions can be verified.")
         expected_status = "cancelled"
-        if state is None or state.attributes.get("status") is None:
-            reason = "Verification read did not return an order status."
-            status = ActionStatus.verification_failed
-        elif state.attributes["status"].value != expected_status:
-            reason = "Verification read diverged from the expected cancelled state."
-            status = ActionStatus.verification_failed
-        else:
-            reason = "Independent read-after-write verification succeeded."
+        observed = None
+        if state is not None and "status" in state.attributes:
+            observed = state.attributes["status"].value
+
+        if observed == expected_status:
             status = ActionStatus.verified
+            reason = "Independent read-after-write verification succeeded."
+        elif not is_final_attempt:
+            status = ActionStatus.verification_pending
+            reason = (
+                "Verification read has not yet observed the expected cancelled state."
+                if observed is not None
+                else "Verification read did not return an order status yet."
+            )
+        elif observed is None:
+            status = ActionStatus.verification_failed
+            reason = "Verification read did not return an order status before timeout."
+        else:
+            status = ActionStatus.state_diverged
+            reason = (
+                f"Verification read diverged from the expected cancelled state "
+                f"(observed {observed!r})."
+            )
+
         action.decision = action.decision.model_copy(update={"status": status, "reason": reason})
         self._append_event(
             tenant_id=tenant_id,
             action_id=action_id,
             event_type=status.value,
             actor_role="verifier",
-            payload={"reason": reason, "commit_id": state.commit_id if state else None},
+            payload={
+                "reason": reason,
+                "commit_id": state.commit_id if state else None,
+                "observed_status": observed,
+            },
         )
         return action.decision
 

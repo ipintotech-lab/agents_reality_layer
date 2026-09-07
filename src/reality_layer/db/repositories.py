@@ -97,3 +97,6 @@ class ActionEventRepository:
 
     def list_for_tenant(self, tenant_id: str) -> Sequence[ActionEvent]:
         return self.session.scalars(tenant_select(ActionEvent, tenant_id)).all()
+
+    def distinct_tenants(self) -> Sequence[str]:
+        return self.session.scalars(select(ActionEvent.tenant_id).distinct()).all()

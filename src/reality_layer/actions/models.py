@@ -18,8 +18,10 @@ class ActionStatus(StrEnum):
     denied = "denied"
     precondition_failed = "precondition_failed"
     provider_accepted = "provider_accepted"
+    verification_pending = "verification_pending"
     verified = "verified"
     verification_failed = "verification_failed"
+    state_diverged = "state_diverged"
 
 
 class ExecutionReceipt(BaseModel):

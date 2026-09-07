@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     shopify_access_token: str = ""
     easypost_api_key: str = ""
 
+    # Verifier worker: bounded read-after-write polling.
+    verifier_initial_interval_seconds: float = 2.0
+    verifier_backoff_factor: float = 2.0
+    verifier_max_interval_seconds: float = 10.0
+    verifier_max_attempts: int = 6
+    verifier_timeout_seconds: float = 30.0
+    verifier_sweep_interval_seconds: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:
