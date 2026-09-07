@@ -163,6 +163,24 @@ def observe(
 
 
 @app.command()
+def verify(
+    once: bool = typer.Option(
+        False, help="Run a single verification sweep and exit instead of looping."
+    ),
+) -> None:
+    """Run the read-after-write verifier worker."""
+    from reality_layer.worker.main import build_worker
+
+    worker = build_worker()
+    if once:
+        decisions = worker.run_once()
+        for decision in decisions:
+            typer.echo(f"{decision.action_id}: {decision.status} — {decision.reason}")
+        return
+    worker.run_forever()
+
+
+@app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host."),
     port: int = typer.Option(8000, help="Bind port."),
