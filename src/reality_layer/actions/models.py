@@ -16,6 +16,20 @@ class ActionStatus(StrEnum):
     approved = "approved"
     rejected = "rejected"
     denied = "denied"
+    precondition_failed = "precondition_failed"
+    provider_accepted = "provider_accepted"
+    verified = "verified"
+    verification_failed = "verification_failed"
+
+
+class ExecutionReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: str
+    status: ActionStatus
+    provider: str
+    provider_request_id: str
+    idempotency_key: str
 
 
 class ActionProposal(BaseModel):
@@ -27,6 +41,8 @@ class ActionProposal(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
     idempotency_key: str = Field(min_length=8, max_length=255)
+    expected_state_version: int = Field(ge=1)
+    expected_attributes: dict[str, Any] = Field(default_factory=dict)
 
 
 class ActionDecision(BaseModel):
@@ -57,3 +73,15 @@ class ActionEventRecord(BaseModel):
     payload: dict[str, Any]
     previous_event_hash: str | None = None
     event_hash: str
+
+
+class ProofBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: str
+    tenant_id: str
+    status: ActionStatus
+    assurance_level: str
+    proposal: ActionProposal
+    events: list[ActionEventRecord]
+    verification_commit_id: str | None = None

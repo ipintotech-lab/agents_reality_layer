@@ -44,6 +44,14 @@ def test_duplicate_observation_is_idempotent() -> None:
     assert second == first
 
 
+def test_new_observation_without_effective_change_does_not_create_commit() -> None:
+    client = TestClient(create_app())
+    first = client.post("/v1/observations", json=observation("obs_noop_1")).json()
+    second = client.post("/v1/observations", json=observation("obs_noop_2")).json()
+
+    assert second == first
+
+
 def test_stale_observation_is_marked_stale() -> None:
     client = TestClient(create_app())
     stale = observation("obs_stale")

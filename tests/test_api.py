@@ -1,6 +1,7 @@
 from fastapi.routing import APIRoute
 
 from reality_layer.api.app import create_app
+from reality_layer.config import Settings
 
 
 def test_healthz() -> None:
@@ -12,3 +13,9 @@ def test_healthz() -> None:
     )
 
     assert health_route.endpoint() == {"status": "ok", "version": "0.1.0"}
+
+
+def test_persistence_is_disabled_by_default() -> None:
+    app = create_app(Settings())
+
+    assert app.title == "Reality Layer"

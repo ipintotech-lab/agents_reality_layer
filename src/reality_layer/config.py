@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     object_storage_root: str = "./data/raw_payloads"
     environment: str = "local"
     log_level: str = "INFO"
+    persistence_enabled: bool = False
+    shopify_domain: str = ""
+    shopify_access_token: str = ""
+    easypost_api_key: str = ""
 
 
 @lru_cache

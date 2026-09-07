@@ -13,7 +13,13 @@ class WorldStateService:
         self._commits: dict[tuple[str, str], CommitRecord] = {}
         self._latest_commit: dict[str, str] = {}
 
-    def ingest(self, tenant_id: str, observation: Observation) -> OrderState:
+    def ingest(
+        self,
+        tenant_id: str,
+        observation: Observation,
+        cause: str = "observation",
+        assurance_level: str = "observed",
+    ) -> OrderState:
         key = (tenant_id, observation.observation_id)
         if key in self._observations:
             return self._states[(tenant_id, observation.object_type, observation.object_id)]
@@ -25,6 +31,8 @@ class WorldStateService:
         before = self._attributes_for(previous)
         after = {name: attribute.model_dump(mode="json") for name, attribute in attributes.items()}
         semantic_diff = self._diff(before, after)
+        if previous is not None and not semantic_diff["attributes_changed"]:
+            return previous
         parent_commit_id = self._latest_commit.get(tenant_id)
         commit_id = f"cmt_{uuid4().hex[:16]}"
         previous_hash = self._latest_hash(tenant_id)
@@ -35,7 +43,7 @@ class WorldStateService:
                 "parent_commit_id": parent_commit_id,
                 "entity_type": observation.object_type,
                 "entity_id": observation.object_id,
-                "cause": "observation",
+                "cause": cause,
                 "observation_ids": [observation.observation_id],
                 "before": before,
                 "after": after,
@@ -49,12 +57,12 @@ class WorldStateService:
             parent_commit_id=parent_commit_id,
             entity_type=observation.object_type,
             entity_id=observation.object_id,
-            cause="observation",
+            cause=cause,
             observation_ids=[observation.observation_id],
             before=before,
             after=after,
             semantic_diff=semantic_diff,
-            assurance_level="observed",
+            assurance_level=assurance_level,
             previous_hash=previous_hash,
             hash=commit_hash,
         )
@@ -71,6 +79,30 @@ class WorldStateService:
         self._states[state_key] = state
         return state
 
+    def hydrate(
+        self,
+        state: OrderState,
+        parent_commit_id: str | None = None,
+        parent_hash: str | None = None,
+    ) -> None:
+        key = (state.tenant_id, state.entity_type.lower(), state.entity_id.split(":", 1)[-1])
+        self._states[key] = state
+        self._latest_commit[state.tenant_id] = parent_commit_id or state.commit_id
+        if parent_commit_id and parent_hash:
+            self._commits[(state.tenant_id, parent_commit_id)] = CommitRecord(
+                commit_id=parent_commit_id,
+                tenant_id=state.tenant_id,
+                entity_type=state.entity_type.lower(),
+                entity_id=state.entity_id.split(":", 1)[-1],
+                cause="hydrated",
+                observation_ids=[],
+                before={},
+                after={},
+                semantic_diff={"attributes_changed": []},
+                assurance_level="observed",
+                hash=parent_hash,
+            )
+
     def get_order(self, tenant_id: str, order_id: str) -> OrderState:
         return self.get_entity(tenant_id, "order", order_id)
 
@@ -85,6 +117,9 @@ class WorldStateService:
             return self._commits[(tenant_id, commit_id)]
         except KeyError as exc:
             raise KeyError(f"Unknown commit: {commit_id}") from exc
+
+    def get_commit_for_state(self, tenant_id: str, state: OrderState) -> CommitRecord:
+        return self.get_commit(tenant_id, state.commit_id)
 
     def _latest_hash(self, tenant_id: str) -> str | None:
         commit_id = self._latest_commit.get(tenant_id)

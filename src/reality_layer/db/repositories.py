@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from reality_layer.db.models import ActionEvent, ObservationLog, StateProjection
+from reality_layer.db.models import ActionEvent, CommitLog, ObservationLog, StateProjection
 
 
 def tenant_select(model: Any, tenant_id: str) -> Select[Any]:
@@ -40,9 +40,46 @@ class StateProjectionRepository:
         ).first()
 
     def save(self, projection: StateProjection) -> StateProjection:
-        self.session.add(projection)
+        existing = self.get(projection.tenant_id, projection.entity_id)
+        if existing is not None:
+            for column in (
+                "entity_type",
+                "attributes",
+                "confidence",
+                "freshness",
+                "provenance",
+                "producing_commit_id",
+                "state_version",
+            ):
+                setattr(existing, column, getattr(projection, column))
+            projection = existing
+        else:
+            self.session.add(projection)
         self.session.flush()
         return projection
+
+
+class CommitRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, commit: CommitLog) -> CommitLog:
+        self.session.add(commit)
+        self.session.flush()
+        return commit
+
+    def get(self, tenant_id: str, commit_id: str) -> CommitLog | None:
+        return self.session.scalars(
+            tenant_get_by_id(CommitLog, tenant_id, "commit_id", commit_id)
+        ).first()
+
+    def latest(self, tenant_id: str) -> CommitLog | None:
+        statement = (
+            tenant_select(CommitLog, tenant_id)
+            .order_by(CommitLog.created_at.desc())
+            .limit(1)
+        )
+        return self.session.scalars(statement).first()
 
 
 class ActionEventRepository:
@@ -57,3 +94,6 @@ class ActionEventRepository:
     def list_for_action(self, tenant_id: str, action_id: str) -> Sequence[ActionEvent]:
         statement = tenant_select(ActionEvent, tenant_id).where(ActionEvent.action_id == action_id)
         return self.session.scalars(statement).all()
+
+    def list_for_tenant(self, tenant_id: str) -> Sequence[ActionEvent]:
+        return self.session.scalars(tenant_select(ActionEvent, tenant_id)).all()

@@ -138,7 +138,7 @@ def upgrade() -> None:
         sa.Column("schema_version", sa.String(length=255), nullable=False),
         sa.Column("correlation_id", sa.String(length=64), nullable=False),
         sa.Column("ingest_outcome", sa.String(length=64), nullable=False),
-        sa.PrimaryKeyConstraint("observation_id"),
+        sa.PrimaryKeyConstraint("tenant_id", "observation_id", name="pk_observation_log"),
         sa.UniqueConstraint(
             "tenant_id",
             "connector_id",
@@ -233,7 +233,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("event_id"),
+        sa.PrimaryKeyConstraint("tenant_id", "event_id", name="pk_action_event"),
         sa.UniqueConstraint("tenant_id", "event_hash", name="uq_action_event_hash_tenant"),
     )
     op.create_index("ix_action_event_action_id", "action_event", ["action_id"])

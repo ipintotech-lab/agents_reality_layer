@@ -2,7 +2,15 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, Index, PrimaryKeyConstraint, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    Index,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -71,7 +79,7 @@ class Connector(TenantMixin, Base):
 class ObservationLog(TenantMixin, Base):
     __tablename__ = "observation_log"
 
-    observation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    observation_id: Mapped[str] = mapped_column(String(64))
     connector_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     external_object_type: Mapped[str] = mapped_column(String(64), nullable=False)
     external_object_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -89,6 +97,7 @@ class ObservationLog(TenantMixin, Base):
     ingest_outcome: Mapped[str] = mapped_column(String(64), nullable=False)
 
     __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "observation_id", name="pk_observation_log"),
         UniqueConstraint(
             "tenant_id",
             "connector_id",
@@ -152,7 +161,7 @@ class CommitLog(TenantMixin, Base):
 class ActionEvent(TenantMixin, Base):
     __tablename__ = "action_event"
 
-    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(64))
     action_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -167,6 +176,7 @@ class ActionEvent(TenantMixin, Base):
     )
 
     __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "event_id", name="pk_action_event"),
         UniqueConstraint("tenant_id", "event_hash", name="uq_action_event_hash_tenant"),
     )
 
