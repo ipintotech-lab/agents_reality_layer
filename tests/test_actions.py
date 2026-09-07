@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -220,6 +221,50 @@ def test_verified_action_returns_proof_bundle() -> None:
     assert proof.json()["assurance_level"] == "verified"
     assert proof.json()["verification_commit_id"].startswith("cmt_")
     assert proof.json()["events"][-1]["event_type"] == "verified"
+
+
+def test_proof_bundle_links_the_full_chain_without_secrets() -> None:
+    client = TestClient(create_app())
+    client.post(
+        "/v1/observations",
+        json={
+            "observation_id": "obs_proof_chain",
+            "connector": "shopify",
+            "object_type": "order",
+            "object_id": "shopify-123",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "payload": {"id": "shopify-123", "status": "open"},
+        },
+    )
+    action = client.post(
+        "/v1/actions", json=proposal(), headers={"X-Reality-Role": "operations"}
+    ).json()
+    client.post(
+        f"/v1/actions/{action['action_id']}/approve",
+        json={"reason": "Approved for verification"},
+        headers={"X-Reality-Role": "operations"},
+    )
+    client.post(f"/v1/actions/{action['action_id']}/execute")
+    client.post(f"/v1/actions/{action['action_id']}/verify")
+
+    body = client.get(f"/v1/actions/{action['action_id']}/proof").json()
+
+    assert body["proposer"]["role"] == "operations"
+    assert body["approver"]["role"] == "operations"
+    assert body["policy"]["policy_version"] == "mvp-1"
+    assert body["provider"]["provider"] == "shopify"
+    assert len(body["provider"]["request_fingerprint"]) == len("sha256:") + 64
+    assert body["verification"]["result"] == "verified"
+    assert body["verification"]["observed_status"] == "cancelled"
+    assert body["projection"]["commit_hash"].startswith("sha256:")
+    assert body["projection"]["after"] != body["projection"]["before"]
+    assert [link["event_type"] for link in body["hash_chain"]] == [
+        e["event_type"] for e in body["events"]
+    ]
+    # Same-role proposer/approver is flagged as a demo-mode exception.
+    assert any("demo-mode" in warning for warning in body["warnings"])
+    # No access token or secret leaks into the bundle.
+    assert "access_token" not in json.dumps(body).lower()
 
 
 def test_action_events_are_tenant_scoped() -> None:

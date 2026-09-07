@@ -154,23 +154,26 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def resolve_commit(tenant_id: str, commit_id: str) -> CommitRecord:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                commit = CompilerPersistenceService(session).load_commit(
+                    tenant_id, commit_id
+                )
+            finally:
+                session.close()
+            if commit is not None:
+                return commit
+        return world_state_service.get_commit(tenant_id, commit_id)
+
     @app.get("/v1/commits/{commit_id}", response_model=CommitRecord)
     def get_commit(
         commit_id: str,
         x_reality_tenant: str = Header(default="demo"),
     ) -> CommitRecord:
         try:
-            if app_settings.persistence_enabled:
-                session = make_session()
-                try:
-                    commit = CompilerPersistenceService(session).load_commit(
-                        x_reality_tenant, commit_id
-                    )
-                finally:
-                    session.close()
-                if commit is not None:
-                    return commit
-            return world_state_service.get_commit(x_reality_tenant, commit_id)
+            return resolve_commit(x_reality_tenant, commit_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -323,7 +326,26 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ProofBundle:
         try:
-            return action_service.proof(action_id, x_reality_tenant)
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                finally:
+                    session.close()
+            events = action_service.events(action_id, x_reality_tenant)
+            commit_id: str | None = None
+            for event in events:
+                if event.event_type in {"verified", "state_diverged"}:
+                    candidate = event.payload.get("commit_id")
+                    if isinstance(candidate, str):
+                        commit_id = candidate
+            commit: CommitRecord | None = None
+            if commit_id is not None:
+                try:
+                    commit = resolve_commit(x_reality_tenant, commit_id)
+                except KeyError:
+                    commit = None
+            return action_service.proof(action_id, x_reality_tenant, commit=commit)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

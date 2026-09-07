@@ -7,13 +7,19 @@ from reality_layer.actions.models import (
     ActionEventRecord,
     ActionProposal,
     ActionStatus,
+    ActorIdentity,
     ApprovalRequest,
     ExecutionReceipt,
+    HashChainLink,
+    PolicyEvidence,
+    ProjectionDelta,
     ProofBundle,
+    ProviderEvidence,
+    VerificationEvidence,
 )
 from reality_layer.actions.policy import evaluate_policy
 from reality_layer.reality_git import hash_json
-from reality_layer.world_state.models import OrderState
+from reality_layer.world_state.models import CommitRecord, OrderState
 
 
 class CancelOrderExecutor(Protocol):
@@ -283,23 +289,159 @@ class ActionService:
         )
         return action.decision
 
-    def proof(self, action_id: str, tenant_id: str = "demo") -> ProofBundle:
+    _VERIFICATION_EVENT_TYPES = frozenset(
+        {"verified", "verification_failed", "state_diverged", "verification_pending"}
+    )
+
+    def proof(
+        self,
+        action_id: str,
+        tenant_id: str = "demo",
+        *,
+        commit: CommitRecord | None = None,
+    ) -> ProofBundle:
         action = self._get(action_id)
         self._check_tenant(action, tenant_id)
-        assurance = "verified" if action.decision.status == ActionStatus.verified else "accepted"
-        verification_events = [
-            event for event in self._events.get(action_id, []) if event.event_type == "verified"
-        ]
-        commit_id = (
-            verification_events[-1].payload.get("commit_id") if verification_events else None
+        events = self.events(action_id, tenant_id)
+        latest_by_type: dict[str, ActionEventRecord] = {e.event_type: e for e in events}
+
+        proposer = self._actor_from(latest_by_type.get("policy_evaluated"))
+        approver = self._actor_from(
+            latest_by_type.get("approved") or latest_by_type.get("rejected")
         )
+        policy = self._policy_evidence(latest_by_type.get("policy_evaluated"))
+        provider = self._provider_evidence(action.proposal, latest_by_type.get("provider_accepted"))
+        verification = self._verification_evidence(events)
+
+        projection: ProjectionDelta | None = None
+        if commit is not None:
+            projection = ProjectionDelta(
+                commit_id=commit.commit_id,
+                commit_hash=commit.hash,
+                previous_hash=commit.previous_hash,
+                before=commit.before,
+                after=commit.after,
+                semantic_diff=commit.semantic_diff,
+            )
+
+        status = action.decision.status
+        if status == ActionStatus.verified:
+            assurance = "verified"
+        elif provider is not None:
+            assurance = "accepted"
+        else:
+            assurance = "observed"
+
+        warnings: list[str] = []
+        if proposer is not None and approver is not None and proposer.role == approver.role:
+            warnings.append(
+                f"Same role ({proposer.role}) proposed and approved this action "
+                "(demo-mode separation-of-duties exception)."
+            )
+        if status != ActionStatus.verified:
+            warnings.append(
+                f"Action did not reach 'verified'; current status is '{status.value}'."
+            )
+        precondition = latest_by_type.get("precondition_failed")
+        if precondition is not None:
+            warnings.append(
+                f"A precondition failed at "
+                f"{precondition.payload.get('stage', 'lifecycle')}: "
+                f"{precondition.payload.get('reason', 'unspecified')}"
+            )
+
         return ProofBundle(
             action_id=action_id,
             tenant_id=tenant_id,
-            status=action.decision.status,
+            status=status,
             assurance_level=assurance,
             proposal=action.proposal,
-            events=self.events(action_id, tenant_id),
+            proposer=proposer,
+            approver=approver,
+            policy=policy,
+            idempotency_key=action.proposal.idempotency_key,
+            provider=provider,
+            verification=verification,
+            projection=projection,
+            hash_chain=[
+                HashChainLink(
+                    event_id=e.event_id,
+                    event_type=e.event_type,
+                    previous_event_hash=e.previous_event_hash,
+                    event_hash=e.event_hash,
+                )
+                for e in events
+            ],
+            warnings=warnings,
+            events=events,
+            verification_commit_id=(
+                verification.verification_commit_id if verification is not None else None
+            ),
+        )
+
+    @staticmethod
+    def _actor_from(event: ActionEventRecord | None) -> ActorIdentity | None:
+        if event is None:
+            return None
+        reason = event.payload.get("reason")
+        return ActorIdentity(
+            role=event.actor_role,
+            reason=str(reason) if isinstance(reason, str) else None,
+            event_id=event.event_id,
+            event_hash=event.event_hash,
+        )
+
+    @staticmethod
+    def _policy_evidence(event: ActionEventRecord | None) -> PolicyEvidence | None:
+        if event is None or not isinstance(event.payload.get("decision"), dict):
+            return None
+        decision = event.payload["decision"]
+        return PolicyEvidence(
+            status=ActionStatus(decision["status"]),
+            matched_rule=decision.get("matched_rule"),
+            reason=decision["reason"],
+            policy_version=decision["policy_version"],
+            required_role=decision.get("required_role"),
+        )
+
+    @staticmethod
+    def _provider_evidence(
+        proposal: ActionProposal, event: ActionEventRecord | None
+    ) -> ProviderEvidence | None:
+        if event is None:
+            return None
+        payload = event.payload
+        fingerprint = hash_json(
+            {
+                "action_type": proposal.action_type.value,
+                "target_entity": proposal.target_entity,
+                "idempotency_key": proposal.idempotency_key,
+                "parameters": proposal.parameters,
+            }
+        )
+        return ProviderEvidence(
+            provider=str(payload.get("provider", "")),
+            provider_request_id=str(payload.get("provider_request_id", "")),
+            request_fingerprint=fingerprint,
+            idempotency_key=proposal.idempotency_key,
+            accepted_status=str(payload.get("status", "")),
+        )
+
+    def _verification_evidence(
+        self, events: list[ActionEventRecord]
+    ) -> VerificationEvidence | None:
+        attempts = [e for e in events if e.event_type in self._VERIFICATION_EVENT_TYPES]
+        if not attempts:
+            return None
+        terminal = [e for e in attempts if e.event_type != "verification_pending"]
+        last = terminal[-1] if terminal else attempts[-1]
+        commit_id = last.payload.get("commit_id")
+        observed = last.payload.get("observed_status")
+        return VerificationEvidence(
+            result=ActionStatus(last.event_type),
+            reason=str(last.payload.get("reason", "")),
+            observed_status=str(observed) if isinstance(observed, str) else None,
+            attempts=len(attempts),
             verification_commit_id=commit_id if isinstance(commit_id, str) else None,
         )
 

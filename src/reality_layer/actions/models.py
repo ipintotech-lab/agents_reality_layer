@@ -77,6 +77,65 @@ class ActionEventRecord(BaseModel):
     event_hash: str
 
 
+class ActorIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    reason: str | None = None
+    event_id: str
+    event_hash: str
+
+
+class PolicyEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: ActionStatus
+    matched_rule: str | None = None
+    reason: str
+    policy_version: str
+    required_role: str | None = None
+
+
+class ProviderEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    provider_request_id: str
+    request_fingerprint: str
+    idempotency_key: str
+    accepted_status: str
+
+
+class VerificationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result: ActionStatus
+    reason: str
+    observed_status: str | None = None
+    attempts: int
+    verification_commit_id: str | None = None
+
+
+class ProjectionDelta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    commit_id: str | None = None
+    commit_hash: str | None = None
+    previous_hash: str | None = None
+    before: dict[str, Any]
+    after: dict[str, Any]
+    semantic_diff: dict[str, Any]
+
+
+class HashChainLink(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_type: str
+    previous_event_hash: str | None = None
+    event_hash: str
+
+
 class ProofBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,5 +144,14 @@ class ProofBundle(BaseModel):
     status: ActionStatus
     assurance_level: str
     proposal: ActionProposal
+    proposer: ActorIdentity | None = None
+    approver: ActorIdentity | None = None
+    policy: PolicyEvidence | None = None
+    idempotency_key: str
+    provider: ProviderEvidence | None = None
+    verification: VerificationEvidence | None = None
+    projection: ProjectionDelta | None = None
+    hash_chain: list[HashChainLink] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     events: list[ActionEventRecord]
     verification_commit_id: str | None = None
