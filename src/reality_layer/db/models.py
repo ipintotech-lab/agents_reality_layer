@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Index, PrimaryKeyConstraint, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -108,7 +108,7 @@ class ObservationLog(TenantMixin, Base):
 class StateProjection(TenantMixin, Base):
     __tablename__ = "state_projection"
 
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    entity_id: Mapped[str] = mapped_column(String(255))
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     attributes: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     confidence: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
@@ -121,6 +121,7 @@ class StateProjection(TenantMixin, Base):
     )
 
     __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "entity_id", name="pk_state_projection"),
         UniqueConstraint("tenant_id", "entity_id", name="uq_state_projection_tenant_entity"),
     )
 

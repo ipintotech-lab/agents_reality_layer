@@ -172,7 +172,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("entity_id"),
+        sa.PrimaryKeyConstraint("tenant_id", "entity_id", name="pk_state_projection"),
         sa.UniqueConstraint("tenant_id", "entity_id", name="uq_state_projection_tenant_entity"),
     )
     op.create_index("ix_state_projection_entity_type", "state_projection", ["entity_type"])
