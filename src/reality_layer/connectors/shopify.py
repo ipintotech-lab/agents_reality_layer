@@ -43,5 +43,15 @@ class ShopifyConnector:
                 "id": order_id,
                 "status": status,
                 **({"currency": payload["currency"]} if "currency" in payload else {}),
+                **(
+                    {"total_price": str(payload["total_price"])}
+                    if payload.get("total_price") is not None
+                    else {}
+                ),
+                **(
+                    {"fulfillment_status": payload["fulfillment_status"]}
+                    if payload.get("fulfillment_status") is not None
+                    else {}
+                ),
             },
         )

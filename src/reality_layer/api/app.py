@@ -154,25 +154,42 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def resolve_commit(tenant_id: str, commit_id: str) -> CommitRecord:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                commit = CompilerPersistenceService(session).load_commit(
+                    tenant_id, commit_id
+                )
+            finally:
+                session.close()
+            if commit is not None:
+                return commit
+        return world_state_service.get_commit(tenant_id, commit_id)
+
     @app.get("/v1/commits/{commit_id}", response_model=CommitRecord)
     def get_commit(
         commit_id: str,
         x_reality_tenant: str = Header(default="demo"),
     ) -> CommitRecord:
         try:
-            if app_settings.persistence_enabled:
-                session = make_session()
-                try:
-                    commit = CompilerPersistenceService(session).load_commit(
-                        x_reality_tenant, commit_id
-                    )
-                finally:
-                    session.close()
-                if commit is not None:
-                    return commit
-            return world_state_service.get_commit(x_reality_tenant, commit_id)
+            return resolve_commit(x_reality_tenant, commit_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    def order_value_for(tenant_id: str, target_entity: str) -> float | None:
+        order_id = target_entity.removeprefix("order:")
+        try:
+            state = world_state_service.get_order(tenant_id, order_id)
+        except KeyError:
+            return None
+        attribute = state.attributes.get("total_price")
+        if attribute is None:
+            return None
+        try:
+            return float(attribute.value)
+        except (TypeError, ValueError):
+            return None
 
     @app.post("/v1/actions", response_model=ActionDecision, status_code=201)
     def propose_action(
@@ -180,17 +197,27 @@ def create_app(
         x_reality_role: str = Header(default="observer"),
         x_reality_tenant: str = Header(default="demo"),
     ) -> ActionDecision:
+        def run() -> ActionDecision:
+            return action_service.propose(
+                proposal,
+                x_reality_role,
+                x_reality_tenant,
+                workspace_mode=app_settings.workspace_mode,
+                order_value=order_value_for(x_reality_tenant, proposal.target_entity),
+                value_limit=app_settings.write_value_limit,
+            )
+
         if app_settings.persistence_enabled:
             session = make_session()
             try:
                 restore_actions(x_reality_tenant, session)
-                decision = action_service.propose(proposal, x_reality_role, x_reality_tenant)
+                decision = run()
                 persist_action_events(x_reality_tenant, decision.action_id, session)
                 session.commit()
                 return decision
             finally:
                 session.close()
-        return action_service.propose(proposal, x_reality_role, x_reality_tenant)
+        return run()
 
     @app.post("/v1/actions/{action_id}/approve", response_model=ActionDecision)
     def approve_action(
@@ -254,10 +281,17 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ExecutionReceipt:
         try:
+            proposal = action_service.get_proposal(action_id, x_reality_tenant)
+            order_id = proposal.target_entity.removeprefix("order:")
+            try:
+                current_state = world_state_service.get_order(x_reality_tenant, order_id)
+            except KeyError:
+                current_state = None
             return action_service.execute(
                 action_id,
                 x_reality_tenant,
                 shopify_connector.cancel_order,
+                current_state,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -292,7 +326,26 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ProofBundle:
         try:
-            return action_service.proof(action_id, x_reality_tenant)
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                finally:
+                    session.close()
+            events = action_service.events(action_id, x_reality_tenant)
+            commit_id: str | None = None
+            for event in events:
+                if event.event_type in {"verified", "state_diverged"}:
+                    candidate = event.payload.get("commit_id")
+                    if isinstance(candidate, str):
+                        commit_id = candidate
+            commit: CommitRecord | None = None
+            if commit_id is not None:
+                try:
+                    commit = resolve_commit(x_reality_tenant, commit_id)
+                except KeyError:
+                    commit = None
+            return action_service.proof(action_id, x_reality_tenant, commit=commit)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
