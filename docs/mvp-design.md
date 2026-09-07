@@ -1,320 +1,772 @@
-# Reality Layer — MVP Design Doc
+# Reality Layer — Investor MVP
 
-**Status:** Draft for review · **Owner:** ipintotech-lab · **Date:** 2026-09-06
-**Companion doc:** [`reality-layer-technical-architecture.md`](./reality-layer-technical-architecture.md)
+**Status:** Updated MVP · **Owner:** ipintotech-lab · **Date:** 2026-09-06  
+**Scope authority:** This document supersedes the original broad MVP scope for the investor demo.  
+**Companion document:** `reality-layer-technical-architecture.md`
 
-> This document turns the v2.0 technical architecture into a buildable MVP. It defines the
-> smallest end-to-end slice that proves the core thesis: *agents act on a verified,
-> permission-aware world state, and every change is auditable.* **No implementation yet —
-> this is the plan.**
+> Build the smallest reliable system that proves an AI agent can act on a real business system without requiring the business to blindly trust either the agent or the API response.
 
 ---
 
-## 1. Goal and Non-Goals
+## 1. Product thesis
 
-### 1.1 MVP thesis
+AI agents can call APIs, but API access alone does not make their actions trustworthy. The Reality Layer maintains an observed, permission-aware World State and mediates agent actions through policy, human approval, idempotent execution, external verification, and auditable evidence.
 
-Prove one full loop for a single vertical (Order-to-Cash):
+The MVP must prove one complete loop:
 
+```text
+real source → immutable observation → compile → World State
+     → agent reads state → proposes typed action → policy decision
+     → HITL approval → idempotent execution
+     → independent read-after-write verification → commit + proof bundle
 ```
-real source  →  immutable observation  →  compile  →  World State + commit
-     →  agent reads state  →  proposes typed action  →  policy decision
-     →  (optional HITL approval)  →  execute with idempotency
-     →  verify externally (read-after-write)  →  new commit + proof bundle
-```
 
-### 1.2 In scope
+The investor demo is not intended to prove broad connector coverage, autonomy, or production scale. It proves that one consequential agent action can be controlled and independently verified end to end.
+
+---
+
+## 2. MVP goals
+
+The MVP must demonstrate that:
+
+1. Data from two real systems can be converted into a queryable World State.
+2. Every effective state change can be traced to immutable source observations.
+3. An agent can propose typed actions but cannot bypass policy or approval.
+4. A human can approve or reject a pending action.
+5. One real write can be executed safely and idempotently.
+6. Success is established through an independent read-after-write observation, not an API success response.
+7. The system can produce a human-readable and machine-readable proof bundle.
+8. The complete flow can be demonstrated reliably in three to four minutes.
+
+---
+
+## 3. Scope
+
+### 3.1 Included
 
 | Area | MVP scope |
-| --- | --- |
-| Vertical | Order-to-Cash / supply operations only |
-| Connectors | 1 commerce source (Shopify), 1 carrier (e.g. UPS/EasyPost), 1 DB/ERP source (Postgres or CSV) |
-| Compiler | ingest → normalize/map → deterministic entity resolution → basic conflict detection → confidence + freshness → change detection → commit |
-| Reality Git | append-only commits, entity-level diff, provenance links, snapshot reference, hash chain (no signatures) |
-| Store | single PostgreSQL instance (relational + JSONB) + object storage for raw payloads |
-| Policy/HITL | RBAC role templates (Operations, Support, Finance) + risk/cost thresholds + durable approval state machine |
-| Actions | 1 real verified write operation end-to-end; 4–6 additional typed proposal/policy demos (see §6) |
-| Interfaces | Python SDK, REST API, MCP server exposing the 6 core tools |
-| Dashboard | read-only World State UI plus controlled operator workflows: Conflicts, Agents, Approvals, History, Health |
-| Onboarding | `reality init` → Observe-only workspace, connector read checks, bounded backfill, data-quality report |
+|---|---|
+| Business vertical | Order-to-Cash |
+| Source systems | Shopify development store + EasyPost test environment |
+| Connectors | Shopify orders and EasyPost shipment/tracking observations |
+| World State | Orders and shipments with provenance, confidence, and freshness |
+| Compiler | Ingest, normalize, deterministic resolution, scoring, projection, commit |
+| Agent interface | REST API as the canonical interface; thin MCP adapter for the live agent demo |
+| Policy | Default-deny writes, Observe-only workspace, RBAC templates, value/risk threshold |
+| HITL | One authenticated approval or rejection step |
+| Real action | `cancel_order` against a designated Shopify test order |
+| Proposal-only actions | `update_shipping_address`, `hold_order` |
+| Verification | Polling read-after-write against Shopify until success or timeout |
+| Audit | Append-only observations, commits, action events, and hash chain |
+| Dashboard | World State, Approval, and History/Proof screens |
+| Storage | PostgreSQL 16 with JSONB; S3-compatible raw-payload storage |
+| CLI | `reality init`, `reality connect`, `reality observe`, `reality serve` |
 
-### 1.3 Explicitly NOT in MVP
+### 3.2 Explicitly excluded
 
-- Graph database, multi-region, cross-party notarization, cryptographic signatures.
-- ABAC, visual policy builder, Python policy SDK, policy-as-code CI.
-- Agent simulation branches / merge of proposed future state.
-- Verticals other than Order-to-Cash; community domain packs.
-- Autonomous (unattended) execution tier — MVP stops at Approve.
-- Self-hosted packaging polish (same interfaces, but managed-first).
-- Fine-grained attribute-level encryption/tokenization (redaction only).
+- A third connector, ERP integration, database connector, or CSV ingestion
+- Autonomous or unattended execution
+- Production payment or refund processing
+- Probabilistic entity resolution
+- Full claim graph or graph database
+- Advanced conflict-resolution queues and policies
+- Multi-step approval, expiry, delegation, alternatives, or proposal supersession
+- ABAC, a visual policy builder, or policy-as-code CI
+- Cryptographic signatures or external timestamping
+- Multi-region deployment or production-scale high availability
+- Full CLI, Agents screen, Health screen, or Metrics dashboard
+- Polished self-hosted distribution
 
-## 2. Success Criteria (exit checklist)
+---
 
-The MVP is "done" when, on a live investor-demo workspace:
+## 4. Fixed MVP decisions
 
-1. Three real connectors ingest observations; World State compiles and is queryable.
-2. An agent (LangGraph or Claude Agent SDK) reads state via MCP and proposes ≥3 of the
-   action types.
-3. Policy engine returns `allowed` / `approval_required` / `denied` with a machine-readable
-   reason for each.
-4. One write action runs end-to-end: it requires HITL, is approved through the operator
-   workflow, executes, and is externally verified via read-after-write.
-5. Every state transition has a commit linked to actor, cause, evidence, and
-   `schema_version`; the History view shows before/after diffs.
-6. A conflict (e.g. carrier says shipped, ERP says processing) appears in the conflict
-   queue with side-by-side evidence and a controlled resolution workflow.
-7. A `get_proof` call returns a proof bundle with an explicit assurance level.
-8. Baseline metrics (§10) are recorded for the demo period.
+### 4.1 Interface
 
-## 3. Architecture (MVP shape)
+REST is the canonical contract. The MCP server is a thin adapter over the same application services and must not implement separate business logic.
 
-Single deployable backend (modular monolith) + worker + web UI.
+This allows deterministic API tests while preserving an agent-native investor experience.
 
+### 4.2 Connectors
+
+The MVP uses:
+
+- **Shopify:** system of record for orders and the target of the real write.
+- **EasyPost:** shipping API aggregator used as the second observed source for shipment and tracking state.
+
+Both connectors use isolated test/development environments. No production customer order is modified during the demo.
+
+### 4.3 Real action
+
+`cancel_order` is the only executable action. It operates only on a designated Shopify test order that:
+
+- belongs to the current tenant;
+- is unfulfilled;
+- has not already been cancelled;
+- does not require a real monetary refund;
+- was created specifically for the current demo or rehearsal.
+
+The exact Shopify cancel options are fixed in configuration and displayed to the approver. The MVP does not infer refund, restock, or customer-notification behavior.
+
+### 4.4 Safety model
+
+- A new workspace always starts in `observe_only` mode.
+- All writes are default-denied unless an explicit policy matches.
+- The demo operator must explicitly enable proposal/approval mode.
+- Connector credentials are server-side and never exposed to the agent.
+- The action gateway is the only component permitted to call write endpoints.
+
+---
+
+## 5. Primary demo scenario
+
+### 5.1 Happy path
+
+1. Shopify and EasyPost observations are ingested.
+2. The compiler projects an order and its shipment into World State.
+3. The dashboard shows source provenance, freshness, and confidence.
+4. An agent queries the order and proposes `cancel_order`.
+5. Policy returns `approval_required` because the action is a write and/or exceeds the configured threshold.
+6. An Operations approver reviews the typed request, reason, evidence, and expected change.
+7. The approver approves the proposal.
+8. The gateway validates the current state and idempotency key, then calls Shopify.
+9. The provider response is recorded as `provider_accepted`, but not treated as proof of success.
+10. The verifier polls Shopify independently and ingests a new observation.
+11. The compiler updates the projection and creates a commit.
+12. The action becomes `verified`, and the dashboard presents the diff and proof bundle.
+
+### 5.2 Policy-control path
+
+The agent also proposes at least one action that is denied, such as:
+
+- an `observer` attempting `cancel_order`; or
+- `update_shipping_address` on an order above the permitted value threshold.
+
+The dashboard/API displays the machine-readable policy rule and plain-language reason. No approval or execution path is created for a denied action.
+
+### 5.3 Proposal-only path
+
+The agent may propose `hold_order` or `update_shipping_address`. The policy decision is shown, but the MVP never executes these action types.
+
+---
+
+## 6. User roles
+
+| Role | Capabilities |
+|---|---|
+| `observer` | Read permission-filtered World State, history, and proofs; cannot propose writes |
+| `operations` | Read state, propose operational actions, approve or reject eligible operational actions |
+| `finance` | Read financial order fields and review value-sensitive actions; cannot execute directly |
+| `system` | Ingest, compile, execute approved actions, verify, and create commits |
+
+For the investor demo, the proposer and approver may be the same authenticated operator only when `demo_mode` is explicitly enabled. The proof bundle records this as a demo exception. Production separation of duties is deferred.
+
+---
+
+## 7. Functional requirements
+
+### 7.1 Workspace onboarding
+
+`reality init` creates a tenant-scoped workspace with:
+
+- mode set to `observe_only`;
+- default-deny write policy;
+- Operations, Finance, and Observer role templates;
+- empty connector configuration;
+- a generated workspace identifier;
+- a bounded backfill configuration.
+
+`reality connect` validates read access for Shopify and EasyPost. Shopify write access is checked separately and remains disabled until explicitly enabled.
+
+Connector checks must report:
+
+- authentication status;
+- required scopes;
+- read capability;
+- write capability, where applicable;
+- last successful check;
+- actionable error details without leaking secrets.
+
+### 7.2 Observation ingestion
+
+Each source read produces an immutable observation containing:
+
+- tenant and connector identity;
+- external object type and identifier;
+- source event/read timestamp;
+- ingestion timestamp;
+- raw payload reference;
+- payload hash;
+- connector/schema version;
+- correlation identifier;
+- ingest outcome.
+
+Raw payloads are stored in S3-compatible object storage. PostgreSQL stores metadata and immutable references.
+
+Duplicate source events must not create duplicate effective observations. Deduplication uses a connector-specific external event ID where available, otherwise a stable payload fingerprint.
+
+### 7.3 Compiler
+
+The compiler runs incrementally for each observation batch:
+
+1. **Normalize:** Apply versioned YAML mappings to canonical Order and Shipment types.
+2. **Resolve:** Match entities using deterministic keys only: Shopify order ID/order number and tracking number.
+3. **Score:** Calculate confidence and freshness per projected attribute.
+4. **Project:** Determine the effective tenant-scoped entity state.
+5. **Detect change:** Compare the effective state with the current projection.
+6. **Commit:** If the effective state changed, update the rebuildable projection and append an immutable commit.
+
+The same ordered observation set and mapping version must produce the same effective projection and semantic diff.
+
+### 7.4 Confidence and freshness
+
+The MVP uses a transparent, deterministic formula rather than learned scoring.
+
+Confidence is based on:
+
+- source reliability configured per attribute;
+- mapping completeness;
+- identifier quality;
+- whether another source provides compatible evidence.
+
+Freshness is computed from the source observation time and an attribute-specific freshness window.
+
+Every returned attribute must expose:
+
+```json
+{
+  "value": "cancelled",
+  "confidence": 0.98,
+  "observed_at": "2026-09-06T12:00:00Z",
+  "fresh_until": "2026-09-06T12:05:00Z",
+  "freshness": "fresh",
+  "source_observation_ids": ["obs_..."]
+}
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                        Agent (LangGraph / Claude Agent SDK)     │
-└───────────────┬───────────────────────────────────────────────┘
-                │ MCP tools / REST / Python SDK
-┌───────────────▼───────────────────────────────────────────────┐
-│  reality-api  (FastAPI)                                        │
-│   ├─ Agent Interface (get_world_state, query_entities, ...)     │
-│   ├─ Policy & Permission Engine (RBAC + risk/cost)             │
-│   ├─ Action Gateway + Verifier                                 │
-│   └─ Dashboard BFF (read-only state + workflow controls)       │
-└───────┬───────────────────────────────┬───────────────────────┘
-        │                               │
-┌───────▼─────────┐            ┌─────────▼─────────────────────┐
-│ reality-worker  │            │  PostgreSQL (+ JSONB)         │
-│  ├─ Connectors  │            │   observation_log             │
-│  │   (poll/hook)│            │   claim_store                 │
-│  ├─ Compiler    │──writes──▶ │   entities / relations        │
-│  │   pipeline   │            │   commit_log (hash chain)     │
-│  └─ Verifier    │            │   action_ledger / approvals   │
-│      jobs       │            │   outbox                      │
-└───────┬─────────┘            └───────────────────────────────┘
-        │
-┌───────▼─────────┐
-│ Object storage  │  raw payloads / large evidence
-│ (S3-compatible) │
-└─────────────────┘
+
+Scores must not imply stronger assurance than the available evidence. Full conflict adjudication is deferred; incompatible values are exposed as low-confidence state with source evidence, not silently hidden.
+
+### 7.5 Querying World State
+
+The API must support:
+
+- fetching a permission-filtered snapshot;
+- querying orders and shipments by deterministic identifiers;
+- filtering by state, freshness, and minimum confidence;
+- returning the commit ID that produced the snapshot;
+- tracing projected attributes to source observations.
+
+### 7.6 Typed action proposals
+
+An action proposal includes:
+
+- action type and schema version;
+- tenant and target entity;
+- typed parameters;
+- actor and role;
+- reason supplied by the agent;
+- evidence and source commit ID;
+- expected current state/version;
+- expected outcome;
+- requested timestamp;
+- proposal correlation ID.
+
+The server validates the action schema and target entity before policy evaluation. Free-form text is context only and cannot alter typed parameters.
+
+### 7.7 Policy decisions
+
+The policy engine returns exactly one outcome:
+
+- `allowed`
+- `approval_required`
+- `denied`
+
+Each decision records:
+
+- matched policy and version;
+- machine-readable reason code;
+- human-readable explanation;
+- evaluated attributes;
+- decision timestamp;
+- actor and role;
+- required approver role, when applicable.
+
+Example MVP rules:
+
+| Rule | Outcome |
+|---|---|
+| Workspace is `observe_only` and action is a write | `denied` |
+| Role is `observer` and action is a write proposal | `denied` |
+| `cancel_order` by Operations for an eligible test order | `approval_required` |
+| Order value is above configured Operations threshold | `approval_required` or `denied`, according to policy |
+| Action type has no explicit policy | `denied` |
+
+### 7.8 Approval
+
+The Approval screen shows:
+
+- target order and current state;
+- proposed typed action;
+- agent rationale and evidence;
+- policy decision and reason;
+- expected before/after state;
+- important side effects configured for the Shopify call;
+- Approve and Reject controls.
+
+Approval is an authenticated append-only action event. Before execution, the gateway revalidates tenant, actor permission, target state, proposal version, and policy. An approval never directly invokes a connector from the browser.
+
+### 7.9 Idempotent execution
+
+The semantic idempotency key is:
+
+```text
+cancel_order:{tenant_id}:{shopify_order_id}:{expected_state_version}
 ```
 
-**Rationale for a modular monolith:** the architecture doc calls for clean seams
-(compiler stages, policy, gateway) but not independent scaling yet. Keep modules with
-explicit interfaces so they can be split later; avoid distributed-systems overhead during
-MVP.
+The action gateway must guarantee that retries do not produce a second effective cancellation or duplicate side effect. A retry returns the existing action outcome when the same key has already been accepted or verified.
 
-### 3.1 Components
+Before calling Shopify, the gateway checks:
 
-| Component | Responsibility | MVP tech |
-| --- | --- | --- |
-| `reality-api` | Agent interface, policy eval, action gateway, dashboard BFF | Python 3.12, FastAPI, Pydantic |
-| `reality-worker` | Connector ingest, compiler pipeline, verifier jobs, outbox dispatch | Same codebase, background workers (Arq/Celery/APScheduler — TBD) |
-| Store | Durable truth + projection | PostgreSQL 16, SQLAlchemy, Alembic; row-level tenant scoping |
-| Object storage | Raw payloads, evidence | S3-compatible (MinIO local / Railway volume or bucket in prod) |
-| `reality-mcp` | MCP server exposing 6 tools | thin adapter over the SDK/API |
-| Dashboard | Read-only World State UI + approval/conflict workflow controls | Next.js (or server-rendered) — TBD, kept minimal |
-| CLI | `reality init/connect/observe/serve` | Python (Typer) |
+- the action is approved;
+- the current projection still matches the expected state/version;
+- the target is an eligible test order;
+- no successful or in-flight execution exists for the idempotency key;
+- the connector write capability is enabled.
 
-*Deployment:* Railway. **Requires a persistent volume for PostgreSQL and object storage —
-ephemeral storage silently loses data.** Verify volume configuration before any DB
-diagnosis.
+If the expected state has changed, execution stops with `precondition_failed` and must not call Shopify.
 
-## 4. Data Model (MVP tables)
+### 7.10 External verification
 
-All rows carry `tenant_id`. Append-only tables are enforced (no `UPDATE`/`DELETE` grants;
-corrections are new rows).
+A successful write response changes the action state to `provider_accepted`; it does not mark the action successful.
 
-| Table | Key columns | Mutability |
-| --- | --- | --- |
-| `observation_log` | `observation_id`, `tenant_id`, `source_id`, `connector_version`, `observed_at`, `received_at`, `payload_hash`, `payload_ref`, `schema_hint` | immutable |
-| `claim_store` | `claim_id`, `entity_id`, `attribute`, `value` (JSONB), `source_refs`, `confidence`, `observed_at`, `expires_at`, `conflict_status` | append-only |
-| `entities` | `entity_id`, `type`, `canonical_keys` (JSONB), `created_at` | identity stable; attrs via projection |
-| `relations` | `from_entity`, `to_entity`, `type`, `confidence` | append-only + tombstone |
-| `state_projection` | `entity_id`, `attributes` (JSONB), `confidence`, `freshness`, `provenance`, `conflicts`, `permissions`, `state_version` | rebuildable |
-| `commit_log` | `commit_id`, `parent_ids`, `author`, `cause`, `message`, `diff` (JSONB), `provenance`, `action_ref`, `resulting_state_hash`, `prev_hash`, `schema_version` | immutable, hash-chained |
-| `action_ledger` | `action_id`, `idempotency_key`, `proposed_by`, `action_type`, `target_entities`, `parameters_hash`, `preconditions`, `risk_score`, `cost_estimate`, `policy_decision`, `approval_ref`, `status`, `execution` (JSONB), `proof_ref` | append-only status history |
-| `approvals` | `approval_ref`, `action_id`, `state`, `reviewer`, `rationale`, `scope`, `expires_at` | append-only state history |
-| `outbox` | `event_id`, `event_type`, `payload`, `published_at` | append + mark published |
+The verifier:
 
-Envelopes for World State, Commit, Action Record, and Agent Activity Event follow §4 and
-§16 of the architecture doc verbatim.
+1. waits for a short configurable interval;
+2. reads the order from Shopify using a separate read operation;
+3. ingests the response as a new immutable observation;
+4. compiles the observation into World State;
+5. compares the effective state with the action's expected outcome;
+6. retries with bounded backoff until success or timeout.
 
-### 4.1 Reality Git commit envelope (MVP)
+Possible verification results:
 
-- `resulting_state_hash` = canonical hash of the affected entity projections after commit.
-- `prev_hash` = `resulting_state_hash` of the parent commit → tamper-evident chain.
-- Canonical JSON serialization (sorted keys, normalized numbers) defined once, shared by
-  hashing and proof code. **No signatures in MVP**, but the serialization contract is
-  frozen now.
+- `verified`
+- `verification_pending`
+- `verification_failed`
+- `state_diverged`
 
-## 5. Reality Compiler (MVP pipeline)
+Only `verified` represents successful completion of the trustworthy loop.
 
-Incremental, triggered per observation batch; plus a nightly full reconciliation pass.
+### 7.11 Commits and diffs
 
-| Stage | MVP behavior | Deferred |
-| --- | --- | --- |
-| Ingest | Connector writes immutable observation + raw payload to object storage | streaming ingest |
-| Normalize/map | Declarative connector mapping file (YAML) → canonical Order-to-Cash schema | learned mappings |
-| Resolve entities | Deterministic keys only (order #, tracking #, SKU, email); ambiguous → review task | probabilistic matching |
-| Conflict detection | Per entity+attribute: competing non-equal effective claims flagged | scoped/parallel-state claims |
-| Conflict resolution | Policy: source priority → recency → confidence; else queue for human | auto-resolution learning |
-| Confidence + freshness | `effective_confidence` formula (§7 arch doc); per-attribute decay config | corroboration graph dedupe of shared upstreams (basic only) |
-| Change detection | Compare effective projection, not payload; semantic diff only | — |
-| Publish | Atomic write of projection + commit + conflict tasks + outbox events | — |
+A commit is created only when the effective World State changes. It contains:
 
-Each stage is independently versioned (`compiler_version`) and replayable from
-`observation_log`.
+```yaml
+commit_id:
+parent_commit_id:
+tenant_id:
+entity_type:
+entity_id:
+actor:
+cause:
+observation_ids:
+action_id:
+mapping_version:
+before:
+after:
+semantic_diff:
+assurance_level:
+created_at:
+previous_hash:
+hash:
+```
 
-## 6. Actions (MVP set)
+The hash is calculated from a canonical serialized representation of the commit. Signatures and external anchoring are deferred.
 
-Investor-proof MVP separates depth from breadth:
+`diff_since` returns semantic entity and attribute changes rather than storage-level row differences.
 
-- **Depth:** 1 real write action executes end-to-end with typed params, preconditions,
-  idempotency key, HITL approval when required, read-after-write verification, commit, and
-  proof bundle.
-- **Breadth:** 4–6 additional high-value actions are implemented as typed proposals with
-  policy decisions and demoable approval/risk rationale; they do not need production-grade
-  external execution before investor-demo exit.
+### 7.12 Proof bundle
 
-| Action | Target | Preconditions (example) | Verification | Default policy |
-| --- | --- | --- | --- | --- |
-| `cancel_order` | Order | `status in {pending, processing}` | re-read order status == `cancelled` | approval_required (Finance/Ops) |
-| `update_shipping_address` | Order | `status == processing`, not yet handed to carrier | re-read address matches | approval_required if order value > threshold |
-| `hold_order` / `release_order` | Order | order exists, not shipped/cancelled | re-read hold flag | allowed for Ops |
-| `refund_order` (full/partial) | Order/Payment | `status in {shipped, delivered, cancelled}`, amount ≤ paid | provider refund receipt + re-read balance | approval_required (Finance) |
-| `reship_order` | Order/Shipment | prior shipment `lost`/`damaged` confirmed by carrier claim | new shipment entity created + tracking # | approval_required |
-| `update_inventory_adjustment` | Inventory | delta within blast-radius limit | re-read quantity == expected | allowed for Ops within budget |
-| `notify_customer` (templated) | Customer | valid contact channel | provider send receipt | allowed |
+The proof bundle is available as JSON and in a human-readable dashboard view. It includes:
 
-"Verification" always means an independent observation, never just a 2xx response.
+- action request and typed parameters;
+- proposer and approver identities;
+- policy decision and policy version;
+- approval/rejection event;
+- idempotency key;
+- provider request fingerprint and redacted response evidence;
+- verification observation;
+- before/after projection and semantic diff;
+- related commit and hash-chain references;
+- timestamps and correlation IDs;
+- explicit assurance level;
+- warnings, including any demo-mode exception.
 
-## 7. Policy & Permission Engine (MVP)
+Assurance levels are:
 
-- **Model:** RBAC. Principals = `org → workspace → agent|user`. Roles: `operations`,
-  `support`, `finance`, `admin`, `observer`.
-- **Rule format:** YAML/JSON. Conditions on `action_type`, `entity.type`,
-  `risk_score`, `cost_estimate`, `confidence`, `freshness`, `conflict_status`.
-- **Outcomes:** `allowed` | `approval_required` | `denied` + `matched_rule` + reason
-  string.
-- **Safety defaults:** default-deny for all writes; new workspace = Observe-only; writes
-  require explicit role + rule.
-- **Evaluation:** pure function `(principal, proposal, pinned_state, policy_version) →
-  decision`. Deterministic, unit-testable, versioned. Snapshot tests over a fixture
-  library ship with MVP.
-- **TOCTOU guard:** mutable preconditions re-checked against latest state immediately
-  before execution.
+| Level | Meaning |
+|---|---|
+| `observed` | State was read from an external source |
+| `accepted` | The external provider accepted the write request |
+| `verified` | The desired state was independently read back and compiled |
+| `corroborated` | Multiple independent sources support the resulting state; reserved for later scope |
 
-Deferred: ABAC, relationship rules, simulation/counterfactual explanations, adaptive
-approval, progressive trust automation.
+The successful investor flow must end at `verified`.
 
-## 8. HITL (MVP)
+---
 
-Durable state machine (not a blocking call). States from §10 of the architecture doc:
-`pending_approval → approved | rejected | expired | superseded → executing → verified |
-partial | failed`.
+## 8. Action lifecycle
 
-- Approval request payload includes proposed action, expected effect, world-state diff,
-  evidence refs, risk, cost, confidence, policy reason, expiry, alternatives.
-- Approvals are **scope-limited** (this action instance) and **time-limited** (expiry).
-- State change to underlying entities between approval and execution → `superseded`,
-  re-propose.
-- Dashboard Approvals view = risk-ranked queue with impact preview.
+The action lifecycle is represented by immutable events:
 
-## 9. Interfaces
+```text
+proposed
+  → policy_evaluated
+  → approval_requested
+  → approved | rejected
+  → execution_started
+  → provider_accepted | execution_failed
+  → verification_pending
+  → verified | verification_failed | state_diverged
+  → committed
+```
 
-### 9.1 MCP tools (the 6 core)
+Not every action follows every transition. A denied action ends after `policy_evaluated`; a rejected action ends at `rejected`.
 
-`get_world_state`, `query_entities`, `propose_action`, `get_action_status`, `get_proof`,
-`diff_since` — semantics per §13.1 of the architecture doc. All responses
-permission-filtered and annotated with freshness + confidence.
+Every event includes:
 
-### 9.2 REST API
+- event ID and action ID;
+- tenant ID;
+- event type and schema version;
+- actor;
+- timestamp;
+- correlation ID;
+- structured payload;
+- evidence references;
+- previous event hash and event hash.
 
-Thin HTTP mirror of the SDK: `GET /world-state`, `GET /entities`, `POST /actions`,
-`GET /actions/{id}`, `GET /proofs/{action_id}`, `GET /diff?since=`, plus dashboard-only
-read endpoints for conflicts, approvals, history, health.
+`get_action_status` derives the current status from the latest valid event. Events are never overwritten.
 
-### 9.3 Python SDK
+---
 
-`RealityClient` per §13.2. Auth: signed JWT or mTLS workload identity — **no shared agent
-API keys in production** (static key allowed only for local dev).
+## 9. Data model
 
-### 9.4 CLI
+All records include `tenant_id`. Tenant filtering is enforced server-side and is part of every repository query.
 
-`reality init` · `reality connect <source>` · `reality observe` · `reality serve --mcp`.
+| Table | Purpose | Mutability |
+|---|---|---|
+| `workspace` | Tenant configuration, operating mode, thresholds | mutable configuration |
+| `connector` | Connector metadata, capabilities, last check; no plaintext secrets | mutable configuration |
+| `observation_log` | Immutable source observations and raw-payload references | append-only |
+| `state_projection` | Current effective entity state | rebuildable |
+| `commit_log` | World State history and semantic diffs | append-only |
+| `action_event` | Complete proposal-to-verification lifecycle | append-only |
+| `policy_version` | Versioned policy documents and hashes | append-only versions |
 
-## 10. Metrics (instrument from day one)
+`state_projection` may be rebuilt entirely from observations, mapping versions, and deterministic compiler logic. The append-only logs are authoritative.
 
-| Metric | How measured in MVP |
-| --- | --- |
-| Prevented unsafe action rate | count of `denied` + `approval_required→rejected` / total proposals |
-| Verification coverage | executed actions with conclusive postcondition + evidence bundle / all executed |
-| World-state freshness | % of action-relevant claims within per-attribute freshness SLO |
-| Conflict resolution time | median(resolved_at − detected_at) |
-| Audit completeness | % commits with actor + cause + evidence + schema_version all populated |
-| Decision latency | P50/P95 for read, propose-eval, approval, execute, verify |
-| Trust progression | workspace stage transitions Observe→Propose→Approve |
+---
 
-## 11. Security & Isolation (MVP baseline)
+## 10. Architecture
 
-- JWT/mTLS auth; per-agent identity.
-- `tenant_id` mandatory in every storage key, query filter, queue message, log line, and
-  proof; Postgres row-level security on tenant tables.
-- Connector credentials in a vault/secret store, never returned to agents or the
-  dashboard.
-- Append-only commits and action records; corrections = new rows.
-- Redaction of sensitive attributes in agent-facing responses (no tokenization yet).
-- Abuse controls: per-workspace rate limits, per-action-type budgets, blast-radius caps,
-  emergency "freeze workspace" switch.
+The MVP is a modular monolith deployed as an API process and a worker process from the same codebase.
 
-## 12. Schema / Ontology (MVP boundary)
+```text
+Agent ──MCP adapter──┐
+                    ├── REST application services
+Dashboard ──REST────┘      ├── query service
+                           ├── policy engine
+                           ├── approval service
+                           └── action gateway
+                                      │
+Worker ────────────────────────────────┤
+  ├── Shopify connector               │
+  ├── EasyPost connector              │
+  ├── compiler                        │
+  └── verifier                        │
+                                      ▼
+                              PostgreSQL + object storage
+```
 
-Compact Order-to-Cash domain pack: ~10–20 entity types, ~30–50 relationships. Candidate
-entities: `Order`, `OrderLine`, `Shipment`, `Package`, `Inventory`, `Product`/`SKU`,
-`Invoice`, `Payment`, `Refund`, `Customer`, `Address`, `Carrier`, `Warehouse`,
-`ReturnRequest`.
+### 10.1 Technology choices
 
-- Semantic-versioned, immutable schema releases; `schema_version` stamped on every
-  observation, claim, commit, proposal, proof.
-- Connector mapping files versioned separately with contract tests (sample payload →
-  expected canonical entity).
-- Add concepts only when a real connector/action/policy/conflict/dashboard needs them.
+| Component | Technology |
+|---|---|
+| Runtime | Python 3.12 |
+| API | FastAPI + Pydantic |
+| Worker | Same Python package with database-backed jobs |
+| Database | PostgreSQL 16 + JSONB |
+| Raw payloads | S3-compatible object storage |
+| Dashboard | Minimal Next.js UI or server-rendered equivalent |
+| CLI | Typer |
+| Agent integration | Thin MCP adapter over application services |
 
-## 13. Build Plan (phased — not yet started)
+The MVP does not require Kafka, a graph database, Redis, Kubernetes, or microservices. Database-backed jobs and transactional writes are sufficient for the demo.
 
-| Phase | Deliverable | Proves |
-| --- | --- | --- |
-| 0 · Foundations | Repo scaffold, Postgres schema + Alembic, canonical JSON + hashing lib, tenant scoping, CI | ground rules frozen |
-| 1 · Observe | 1 read connector (Shopify), ingest → observation_log, compiler ingest→map→resolve→score→project, `get_world_state` / `query_entities`, Observe-only onboarding + data-quality report | verified world state exists |
-| 2 · History | `commit_log` + hash chain, change detection, `diff_since`, dashboard Reality + History views | auditability |
-| 3 · Conflicts | 2nd + 3rd connectors, conflict detection + resolution policy, conflict queue UI, resolution commits | conflicts are first-class |
-| 4 · Propose + Policy | Action envelopes, RBAC policy engine + fixtures, `propose_action`, `get_action_status`, dashboard Agents view | intent ≠ execution |
-| 5 · HITL + Act + Verify | Durable approval state machine, Action Gateway, idempotency, 1 real write action end-to-end, verifier read-after-write, proof bundle + `get_proof`, Approvals UI | the full loop with explicit human control |
-| 6 · Demo Breadth | Remaining 4–6 actions as typed proposal/policy demos, controlled conflict resolution workflow, MCP server packaging, metrics dashboard | investor narrative breadth |
-| 7 · Harden | Security review, Railway deploy w/ persistent volume, demo data reset/runbook, latency and audit-completeness checks | demo-ready MVP |
+---
 
-## 14. Key Technical Decisions (MVP)
+## 11. API and MCP contract
 
-Follows §20 of the architecture doc:
+### 11.1 Canonical REST endpoints
 
-| Area | MVP choice | Revisit when |
-| --- | --- | --- |
-| State storage | PostgreSQL + JSONB + object storage | measured graph traversal bottleneck |
-| History | custom append-only commit model over event/claim tables | need cross-region / external notarization |
-| Compilation | event-driven incremental + nightly reconciliation | source lacks deltas or sustained lag |
-| Branches | single authoritative mainline; no simulation branches in MVP | concrete multi-workspace merge use case |
-| Long-running actions | async state machine + polling/webhook verifier | provider-specific orchestration dominates |
-| Schema | layered versioned ontology, controlled extensions | repeated customer friction |
-| Cryptography | canonical hashes + chain links; **no signatures** | regulated / cross-party proof requirement |
-| Deployment | Railway managed, modular monolith + worker, persistent volume | scale or isolation pressure |
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/v1/world-state` | Permission-filtered snapshot |
+| `GET` | `/v1/entities` | Query orders and shipments |
+| `GET` | `/v1/entities/{type}/{id}` | Entity state, freshness, confidence, provenance |
+| `GET` | `/v1/diffs` | Semantic changes since a commit or timestamp |
+| `POST` | `/v1/actions` | Submit a typed proposal and evaluate policy |
+| `GET` | `/v1/actions/{id}` | Derived action status and event history |
+| `POST` | `/v1/actions/{id}/approve` | Approve an eligible proposal |
+| `POST` | `/v1/actions/{id}/reject` | Reject an eligible proposal |
+| `GET` | `/v1/actions/{id}/proof` | Return proof bundle |
 
-## 15. Open Questions
+### 11.2 MCP tools
 
-1. Worker/queue choice (Arq vs Celery vs APScheduler) — depends on Railway constraints.
-2. Carrier connector: direct UPS API vs aggregator (EasyPost/Shippo) for the MVP demo.
-3. Dashboard: full Next.js app vs server-rendered minimal UI given MVP scope.
-4. Object storage on Railway: bucket vs mounted volume.
-5. Identity provider for JWT/mTLS in the managed MVP.
-6. How much backfill history is "bounded" per connector (30 / 90 days?).
-7. Does the MVP demo need a second agent to show cross-agent dedup, or defer §16 entirely?
+- `get_world_state`
+- `query_entities`
+- `propose_action`
+- `get_action_status`
+- `get_proof`
+- `diff_since`
+
+The MCP adapter authenticates to the same tenant and role model and calls the same application services as REST. It must not have direct database or connector access.
+
+---
+
+## 12. Dashboard
+
+### 12.1 World State
+
+Displays:
+
+- order and shipment entities;
+- effective state;
+- source systems;
+- attribute confidence and freshness;
+- observation and commit timestamps;
+- link to provenance and recent diff.
+
+### 12.2 Approval
+
+Displays:
+
+- pending proposal;
+- actor and rationale;
+- typed parameters;
+- supporting evidence;
+- policy outcome and reason;
+- expected change and configured side effects;
+- Approve and Reject buttons.
+
+### 12.3 History / Proof
+
+Displays:
+
+- commit chain;
+- entity-level before/after diff;
+- action event timeline;
+- source and verification evidence;
+- assurance badge;
+- downloadable JSON proof bundle.
+
+The dashboard is intentionally not an administration console. Connector setup may remain CLI/config driven.
+
+---
+
+## 13. Non-functional requirements
+
+### 13.1 Reliability
+
+- The live path must be rehearsable and resettable with a script or documented procedure.
+- All external calls use bounded timeouts and retries.
+- Verification uses bounded polling and shows pending state rather than blocking the UI.
+- Duplicate webhooks, observations, approvals, and execution retries must be safe.
+
+### 13.2 Performance targets
+
+| Operation | Demo target |
+|---|---|
+| World State query | p95 under 500 ms excluding initial cold start |
+| Proposal + policy decision | p95 under 750 ms |
+| Approval acknowledgement | under 500 ms |
+| Verified action completion | normally under 15 seconds; hard demo timeout 30 seconds |
+| History/proof display | under 1 second |
+
+### 13.3 Security
+
+- Secrets are loaded from the runtime secret mechanism and never stored in logs or proof bundles.
+- Raw payload access is tenant-scoped.
+- Sensitive provider response fields are redacted before evidence is displayed.
+- Writes require explicit connector scopes and gateway authorization.
+- Every approval and execution event records an authenticated actor.
+- The system rejects cross-tenant entity and action references.
+
+### 13.4 Observability
+
+Structured logs must include tenant ID, correlation ID, action ID, commit ID, connector, and stage. The demo runbook includes a single way to inspect failed ingest, execution, and verification jobs.
+
+---
+
+## 14. Acceptance criteria
+
+### 14.1 Connectors and World State
+
+- [ ] Shopify and EasyPost authenticate in isolated test environments.
+- [ ] A bounded backfill ingests at least one linked order and shipment.
+- [ ] Raw payloads are stored externally and referenced by immutable observations.
+- [ ] Duplicate source delivery does not create a duplicate effective state change.
+- [ ] World State returns provenance, confidence, freshness, and producing commit ID.
+
+### 14.2 Compiler and history
+
+- [ ] Deterministic identifiers resolve the demo Order and Shipment.
+- [ ] Reprocessing the same observations produces the same projection.
+- [ ] Effective changes create commits; no-op observations do not.
+- [ ] `diff_since` returns a clear semantic before/after diff.
+- [ ] The commit hash chain validates for the demo tenant.
+
+### 14.3 Policy and HITL
+
+- [ ] A new workspace is `observe_only`.
+- [ ] An unauthorized write proposal is denied with a reason code.
+- [ ] `cancel_order` returns `approval_required` for the configured scenario.
+- [ ] The Approval screen shows typed parameters, evidence, policy reason, and side effects.
+- [ ] Approval and rejection create immutable events.
+- [ ] Policy and preconditions are rechecked immediately before execution.
+
+### 14.4 Execution and verification
+
+- [ ] Only the designated test-order cancellation can be executed.
+- [ ] Reusing an idempotency key cannot duplicate the external effect.
+- [ ] A stale expected state produces `precondition_failed` without a write call.
+- [ ] A 2xx/provider success response produces `provider_accepted`, not `verified`.
+- [ ] A separate Shopify read creates a verification observation.
+- [ ] Matching read-back state produces `verified` and a resulting commit.
+- [ ] Timeout and divergent-state paths are represented explicitly.
+
+### 14.5 Proof and demo readiness
+
+- [ ] The proof bundle links proposal, policy, approval, execution, verification, and commit.
+- [ ] The successful proof ends with assurance level `verified`.
+- [ ] Secrets and sensitive fields do not appear in the proof.
+- [ ] The complete happy path runs in three to four minutes.
+- [ ] The demo can be reset and repeated at least five times without manual database repair.
+- [ ] A prerecorded fallback and static proof bundle are available if an external test service is unavailable.
+
+---
+
+## 15. Build plan
+
+| Phase | Deliverables | Exit condition |
+|---|---|---|
+| 0 — Foundation | Repository structure, local environment, tenant scoping, schema, object storage, CI | Tenant-isolation tests pass and append-only tables exist |
+| 1 — Observe | Shopify/EasyPost connectors, bounded backfill, immutable observations, raw payload references | Two sources produce traceable observations |
+| 2 — Compile | Canonical schema, mappings, deterministic resolution, scoring, projection | Demo order/shipment are queryable with confidence and freshness |
+| 3 — History | Commit creation, semantic diff, hash chain, History screen | World State changes are traceable to observations |
+| 4 — Govern | Typed proposals, RBAC policies, thresholds, denial path, Approval screen | Agent intent is separated from authorized execution |
+| 5 — Act | Shopify test cancellation, preconditions, semantic idempotency, append-only action events | Approved action executes at most once |
+| 6 — Verify | Polling read-after-write, verification observation, proof bundle, assurance level | Full loop ends in `verified` |
+| 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts |
+| 8 — Rehearse | Seed/reset tooling, runbook, latency tests, failure injection, fallback recording | Five consecutive three-to-four-minute rehearsals succeed |
+
+---
+
+## 16. Test strategy
+
+### 16.1 Automated tests
+
+- Unit tests for mapping, entity resolution, scoring, canonical serialization, hashes, policy rules, and transition validation.
+- Contract tests for Shopify and EasyPost adapters using recorded/redacted fixtures.
+- Integration tests with PostgreSQL and object storage.
+- End-to-end tests for denied, rejected, stale, failed, divergent, and verified actions.
+- Replay tests proving deterministic projection from the same observation set.
+- Tenant-isolation tests for every API repository path.
+
+### 16.2 Live-service tests
+
+Before each demo:
+
+1. Validate connector authentication and scopes.
+2. Create or identify a fresh eligible Shopify test order.
+3. Run bounded ingest and verify the expected World State.
+4. Confirm the test action policy returns `approval_required`.
+5. Confirm verification latency is below the demo timeout.
+6. Reset the environment and preserve one fallback proof bundle.
+
+---
+
+## 17. Demo runbook
+
+### 17.1 Preparation
+
+- Create a fresh unfulfilled Shopify test order.
+- Ensure no real payment/refund is involved.
+- Associate a test shipment/tracking record in EasyPost.
+- Run connector health checks and bounded ingest.
+- Confirm the workspace is initially Observe-only, then explicitly enable demo proposal mode.
+- Open the World State, Approval, and History/Proof screens in advance.
+
+### 17.2 Three-to-four-minute script
+
+| Time | Step | Message |
+|---|---|---|
+| 0:00–0:45 | Show World State | “The agent reads a compiled view of reality, including where each value came from and how fresh it is.” |
+| 0:45–1:30 | Agent proposes cancellation | “The agent can express intent, but it cannot directly operate Shopify.” |
+| 1:30–2:00 | Show policy decision | “Policy explains why human approval is required.” |
+| 2:00–2:30 | Approve | “The gateway rechecks policy and state immediately before execution.” |
+| 2:30–3:15 | Execute and verify | “The API response is not proof; the system independently reads Shopify again.” |
+| 3:15–4:00 | Show diff and proof | “The final bundle connects intent, approval, external evidence, and the resulting state.” |
+
+If time permits, finish with the denied observer proposal to demonstrate that policy is enforced rather than decorative.
+
+---
+
+## 18. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Shopify test state is unsuitable for cancellation | Core action fails | Preflight eligibility check and freshly seeded test order |
+| External read-after-write is delayed | Demo stalls | Async polling, visible pending status, 30-second bound, prerecorded fallback |
+| EasyPost does not represent a direct carrier source | Positioning confusion | Describe it accurately as a shipping API aggregator |
+| Agent produces unexpected arguments | Unsafe or confusing proposal | Strict typed schema; reject unknown fields; fixed demo prompt |
+| Retry duplicates side effects | Loss of trust | Semantic idempotency key, unique constraint, provider/state reconciliation |
+| Projection changed after approval | Action based on stale reality | Expected state version and pre-execution revalidation |
+| Hash chain is mistaken for signed proof | Overclaiming | Label it tamper-evident within the store, not independently notarized |
+| Demo-mode same-person approval weakens separation | Governance concern | Record explicit exception in proof and explain production direction |
+| Connector outage | Demo interruption | Preflight, cached observed state, fallback recording and proof bundle |
+
+---
+
+## 19. Definition of done
+
+The Investor MVP is complete when all acceptance criteria pass and a live operator can repeatedly demonstrate:
+
+```text
+two real sources
+  → permission-aware World State
+  → typed agent proposal
+  → explainable policy decision
+  → explicit human approval
+  → idempotent real write
+  → independent external verification
+  → semantic commit and proof at assurance level: verified
+```
+
+The team must resist expanding the slice until this loop is reliable. Connector breadth, autonomous execution, sophisticated conflict handling, richer policies, and production hardening begin only after the investor flow succeeds consistently.
+
+---
+
+## 20. Post-MVP expansion path
+
+After the Demo Slice is proven, expand in this order:
+
+1. Full conflict detection and resolution UX.
+2. Durable HITL lifecycle with expiry, supersession, alternatives, and scoped approvals.
+3. Additional verified actions.
+4. A third source such as ERP, database, or CSV.
+5. Stronger claim/provenance model and multi-source corroboration.
+6. Policy-as-code and richer authorization.
+7. Signed proof bundles and external integrity anchoring.
+8. Production packaging, operational dashboards, and self-hosted deployment.
+
