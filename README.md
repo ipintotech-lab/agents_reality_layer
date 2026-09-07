@@ -15,7 +15,16 @@ custom orchestrators.
 
 ## Status
 
-Design phase — **not yet implemented.**
+Phase 0 foundation implementation started. The current codebase contains the initial Python
+package scaffold, API health endpoint, database model/migration foundation, and Reality Git
+canonical hashing utilities.
+
+## Development
+
+```bash
+python -m pip install -e ".[dev]"
+pytest
+```
 
 ## Docs
 
