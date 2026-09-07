@@ -82,12 +82,21 @@ class ActionService:
         return decision
 
     def restore(self, event: ActionEventRecord) -> None:
+        if event.event_id in {
+            existing.event_id
+            for events in self._events.values()
+            for existing in events
+        }:
+            return
         if event.event_type != "policy_evaluated":
             action = self._actions.get(event.action_id)
             if action is None:
                 return
             self._apply_restored_event(action, event)
             self._events.setdefault(event.action_id, []).append(event)
+            if event.event_type == "provider_accepted":
+                receipt = ExecutionReceipt.model_validate(event.payload)
+                self._executions[(event.tenant_id, receipt.idempotency_key)] = receipt
             return
         proposal_data = event.payload.get("proposal")
         decision_data = event.payload.get("decision")

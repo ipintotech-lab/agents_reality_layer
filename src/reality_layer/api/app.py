@@ -58,6 +58,23 @@ def create_app(
         for event in action_service.events(action_id, tenant_id):
             persistence.persist(event)
 
+    def resolve_order_state(tenant_id: str, order_id: str) -> OrderState | None:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                state = CompilerPersistenceService(session).load_state(
+                    tenant_id, f"order:{order_id}"
+                )
+            finally:
+                session.close()
+            if state is not None:
+                world_state_service.hydrate(state)
+                return state
+        try:
+            return world_state_service.get_order(tenant_id, order_id)
+        except KeyError:
+            return None
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
@@ -250,10 +267,7 @@ def create_app(
         try:
             action = action_service.get_proposal(action_id, x_reality_tenant)
             order_id = action.target_entity.removeprefix("order:")
-            try:
-                current_state = world_state_service.get_order(x_reality_tenant, order_id)
-            except KeyError:
-                current_state = None
+            current_state = resolve_order_state(x_reality_tenant, order_id)
             return action_service.approve(
                 action_id,
                 approval,
@@ -271,6 +285,16 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ActionDecision:
         try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                    decision = action_service.reject(action_id, rejection, x_reality_tenant)
+                    persist_action_events(x_reality_tenant, action_id, session)
+                    session.commit()
+                    return decision
+                finally:
+                    session.close()
             return action_service.reject(action_id, rejection, x_reality_tenant)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -281,18 +305,29 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ExecutionReceipt:
         try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                finally:
+                    session.close()
             proposal = action_service.get_proposal(action_id, x_reality_tenant)
             order_id = proposal.target_entity.removeprefix("order:")
-            try:
-                current_state = world_state_service.get_order(x_reality_tenant, order_id)
-            except KeyError:
-                current_state = None
-            return action_service.execute(
+            current_state = resolve_order_state(x_reality_tenant, order_id)
+            receipt = action_service.execute(
                 action_id,
                 x_reality_tenant,
                 shopify_connector.cancel_order,
                 current_state,
             )
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    persist_action_events(x_reality_tenant, action_id, session)
+                    session.commit()
+                finally:
+                    session.close()
+            return receipt
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -304,6 +339,12 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ActionDecision:
         try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                finally:
+                    session.close()
             proposal = action_service.get_proposal(action_id, x_reality_tenant)
             order_id = proposal.target_entity.removeprefix("order:")
             observed = shopify_connector.read_order(order_id)
@@ -314,7 +355,15 @@ def create_app(
                 cause="verified_action",
                 assurance_level="verified",
             )
-            return action_service.verify(action_id, x_reality_tenant, state)
+            decision = action_service.verify(action_id, x_reality_tenant, state)
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    persist_action_events(x_reality_tenant, action_id, session)
+                    session.commit()
+                finally:
+                    session.close()
+            return decision
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -355,6 +404,16 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> list[ActionEventRecord]:
         try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    events = ActionEventPersistenceService(session).list_for_action(
+                        x_reality_tenant, action_id
+                    )
+                finally:
+                    session.close()
+                for event in events:
+                    action_service.restore(event)
             return action_service.events(action_id, x_reality_tenant)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
