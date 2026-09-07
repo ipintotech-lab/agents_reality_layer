@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://reality:reality@localhost:5432/reality"
     )
+    object_storage_root: str = "./data/raw_payloads"
     environment: str = "local"
     log_level: str = "INFO"
 

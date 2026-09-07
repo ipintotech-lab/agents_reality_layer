@@ -1,8 +1,8 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,102 +12,109 @@ JsonArray = list[Any]
 JsonObject = dict[str, Any]
 
 
-def utcnow() -> datetime:
-    return datetime.now(UTC)
+class WorkspaceMode(StrEnum):
+    observe_only = "observe_only"
+    demo_proposal = "demo_proposal"
 
 
-class ActionStatus(StrEnum):
-    proposed = "proposed"
-    approval_required = "approval_required"
-    approved = "approved"
-    executing = "executing"
-    verified = "verified"
-    partial = "partial"
-    failed = "failed"
-    denied = "denied"
-
-
-class ApprovalState(StrEnum):
-    pending_approval = "pending_approval"
-    approved = "approved"
-    rejected = "rejected"
-    expired = "expired"
-    superseded = "superseded"
+class ConnectorKind(StrEnum):
+    shopify = "shopify"
+    easypost = "easypost"
 
 
 class TenantMixin:
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
 
+class Workspace(TenantMixin, Base):
+    __tablename__ = "workspace"
+
+    workspace_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mode: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=WorkspaceMode.observe_only
+    )
+    thresholds: Mapped[JsonObject] = mapped_column(JSONB, nullable=False, default=dict)
+    bounded_backfill: Mapped[JsonObject] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "workspace_id", name="uq_workspace_tenant"),)
+
+
+class Connector(TenantMixin, Base):
+    __tablename__ = "connector"
+
+    connector_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    capabilities: Mapped[JsonObject] = mapped_column(JSONB, nullable=False, default=dict)
+    required_scopes: Mapped[JsonArray] = mapped_column(JSONB, nullable=False, default=list)
+    config_ref: Mapped[str | None] = mapped_column(String(255))
+    last_check: Mapped[JsonObject] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "connector_id", name="uq_connector_tenant"),
+    )
+
+
 class ObservationLog(TenantMixin, Base):
     __tablename__ = "observation_log"
 
     observation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    source_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    connector_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    external_object_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_object_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_event_id: Mapped[str | None] = mapped_column(String(255))
+    source_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     payload_hash: Mapped[str] = mapped_column(String(95), nullable=False)
     payload_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    schema_hint: Mapped[str | None] = mapped_column(String(255))
-
-
-class ClaimStore(TenantMixin, Base):
-    __tablename__ = "claim_store"
-
-    claim_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    attribute: Mapped[str] = mapped_column(String(255), nullable=False)
-    value: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    source_refs: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    confidence: Mapped[float] = mapped_column(nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    conflict_status: Mapped[str] = mapped_column(String(64), nullable=False, default="none")
+    connector_version: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(255), nullable=False)
-    compiler_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ingest_outcome: Mapped[str] = mapped_column(String(64), nullable=False)
 
     __table_args__ = (
-        Index("ix_claim_store_entity_attribute", "tenant_id", "entity_id", "attribute"),
+        UniqueConstraint(
+            "tenant_id",
+            "connector_id",
+            "external_event_id",
+            name="uq_observation_external_event",
+        ),
+        Index(
+            "ix_observation_external_object",
+            "tenant_id",
+            "connector_id",
+            "external_object_type",
+            "external_object_id",
+        ),
     )
-
-
-class Entity(TenantMixin, Base):
-    __tablename__ = "entities"
-
-    entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    canonical_keys: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    __table_args__ = (UniqueConstraint("tenant_id", "entity_id", name="uq_entities_tenant_entity"),)
-
-
-class Relation(TenantMixin, Base):
-    __tablename__ = "relations"
-
-    relation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    from_entity: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    to_entity: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    type: Mapped[str] = mapped_column(String(64), nullable=False)
-    confidence: Mapped[float] = mapped_column(nullable=False)
-    tombstoned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StateProjection(TenantMixin, Base):
     __tablename__ = "state_projection"
 
     entity_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     attributes: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     confidence: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     freshness: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     provenance: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    conflicts: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    permissions: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    producing_commit_id: Mapped[str | None] = mapped_column(String(64), index=True)
     state_version: Mapped[int] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -122,70 +129,60 @@ class CommitLog(TenantMixin, Base):
     __tablename__ = "commit_log"
 
     commit_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    parent_ids: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    author: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    parent_commit_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    actor: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
     cause: Mapped[str] = mapped_column(String(64), nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    diff: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    provenance: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    action_ref: Mapped[str | None] = mapped_column(String(64), index=True)
-    resulting_state_hash: Mapped[str] = mapped_column(String(95), nullable=False)
-    prev_hash: Mapped[str | None] = mapped_column(String(95))
-    schema_version: Mapped[str] = mapped_column(String(255), nullable=False)
-    compiler_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    observation_ids: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
+    action_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    mapping_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    before: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    after: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    semantic_diff: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    assurance_level: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_hash: Mapped[str | None] = mapped_column(String(95))
+    hash: Mapped[str] = mapped_column(String(95), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
-class ActionLedger(TenantMixin, Base):
-    __tablename__ = "action_ledger"
+class ActionEvent(TenantMixin, Base):
+    __tablename__ = "action_event"
 
-    action_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    proposed_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_entities: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    parameters_hash: Mapped[str] = mapped_column(String(95), nullable=False)
-    preconditions: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
-    risk_score: Mapped[float] = mapped_column(nullable=False)
-    cost_estimate: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    policy_decision: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    approval_ref: Mapped[str | None] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(64), nullable=False)
-    execution: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    proof_ref: Mapped[str | None] = mapped_column(String(255))
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    action_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    payload: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    evidence_refs: Mapped[JsonArray] = mapped_column(JSONB, nullable=False, default=list)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(95))
+    event_hash: Mapped[str] = mapped_column(String(95), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "idempotency_key", name="uq_action_ledger_idempotency"),
+        UniqueConstraint("tenant_id", "event_hash", name="uq_action_event_hash_tenant"),
     )
 
 
-class Approval(TenantMixin, Base):
-    __tablename__ = "approvals"
+class PolicyVersion(TenantMixin, Base):
+    __tablename__ = "policy_version"
 
-    approval_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
-    action_id: Mapped[str] = mapped_column(ForeignKey("action_ledger.action_id"), nullable=False)
-    state: Mapped[str] = mapped_column(String(64), nullable=False)
-    reviewer: Mapped[str | None] = mapped_column(String(255))
-    rationale: Mapped[str | None] = mapped_column(Text)
-    scope: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    policy_version_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    document: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
+    document_hash: Mapped[str] = mapped_column(String(95), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-
-class Outbox(TenantMixin, Base):
-    __tablename__ = "outbox"
-
-    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    event_type: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    payload: Mapped[JsonObject] = mapped_column(JSONB, nullable=False)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "workspace_id", "version", name="uq_policy_version"),
     )
