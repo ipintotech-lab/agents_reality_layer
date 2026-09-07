@@ -39,14 +39,28 @@ class ActionService:
         self._executions: dict[tuple[str, str], ExecutionReceipt] = {}
 
     def propose(
-        self, proposal: ActionProposal, role: str, tenant_id: str = "demo"
+        self,
+        proposal: ActionProposal,
+        role: str,
+        tenant_id: str = "demo",
+        *,
+        workspace_mode: str = "demo_proposal",
+        order_value: float | None = None,
+        value_limit: float | None = None,
     ) -> ActionDecision:
         existing_id = self._idempotency.get((tenant_id, proposal.idempotency_key))
         if existing_id is not None:
             return self._actions[existing_id].decision
 
         action_id = f"act_{uuid4().hex[:16]}"
-        decision = evaluate_policy(action_id=action_id, proposal=proposal, role=role)
+        decision = evaluate_policy(
+            action_id=action_id,
+            proposal=proposal,
+            role=role,
+            workspace_mode=workspace_mode,
+            order_value=order_value,
+            value_limit=value_limit,
+        )
         self._actions[action_id] = StoredAction(proposal, decision, role, tenant_id)
         self._idempotency[(tenant_id, proposal.idempotency_key)] = action_id
         self._append_event(
@@ -289,11 +303,15 @@ class ActionService:
             verification_commit_id=commit_id if isinstance(commit_id, str) else None,
         )
 
+    #: Order statuses that make a test cancellation ineligible.
+    TERMINAL_ORDER_STATUSES = frozenset({"cancelled", "canceled", "closed", "voided"})
+
     def execute(
         self,
         action_id: str,
         tenant_id: str,
         cancel_order: CancelOrderExecutor,
+        current_state: OrderState | None = None,
     ) -> ExecutionReceipt:
         action = self._get(action_id)
         self._check_tenant(action, tenant_id)
@@ -305,6 +323,7 @@ class ActionService:
             raise ValueError("Only approved actions can be executed.")
         if action.proposal.action_type != "cancel_order":
             raise ValueError("Only cancel_order is executable in the MVP.")
+        self._require_eligible_test_order(action_id, tenant_id, current_state)
         order_id = action.proposal.target_entity.removeprefix("order:")
         receipt = cancel_order(action_id, order_id, action.proposal.idempotency_key)
         action.decision = action.decision.model_copy(
@@ -319,6 +338,32 @@ class ActionService:
             payload=receipt.model_dump(mode="json"),
         )
         return receipt
+
+    def _require_eligible_test_order(
+        self, action_id: str, tenant_id: str, current_state: OrderState | None
+    ) -> None:
+        reason: str | None = None
+        if current_state is None:
+            reason = "Target order is not present in World State."
+        else:
+            status_attr = current_state.attributes.get("status")
+            status = status_attr.value if status_attr is not None else None
+            fulfillment_attr = current_state.attributes.get("fulfillment_status")
+            fulfillment = fulfillment_attr.value if fulfillment_attr is not None else None
+            if isinstance(status, str) and status.lower() in self.TERMINAL_ORDER_STATUSES:
+                reason = f"Target order is already {status}; test cancellation is not eligible."
+            elif isinstance(fulfillment, str) and fulfillment.lower() == "fulfilled":
+                reason = "Target order is fulfilled and not eligible for test cancellation."
+        if reason is None:
+            return
+        self._append_event(
+            tenant_id=tenant_id,
+            action_id=action_id,
+            event_type="precondition_failed",
+            actor_role="system",
+            payload={"reason": reason, "stage": "execution"},
+        )
+        raise ValueError(reason)
 
     def _append_event(
         self,

@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     shopify_access_token: str = ""
     easypost_api_key: str = ""
 
+    # Governance: a new workspace should start in "observe_only"; the demo operator
+    # explicitly sets "demo_proposal" before proposing writes.
+    workspace_mode: str = "demo_proposal"
+    write_value_limit: float | None = None
+
     # Verifier worker: bounded read-after-write polling.
     verifier_initial_interval_seconds: float = 2.0
     verifier_backoff_factor: float = 2.0

@@ -73,6 +73,7 @@ def _approved_and_executed_action(svc: ActionService, ws: WorldStateService) -> 
             provider_request_id="shopify-test-1",
             idempotency_key=key,
         ),
+        ws.get_order(TENANT, ORDER),
     )
     return decision.action_id
 
