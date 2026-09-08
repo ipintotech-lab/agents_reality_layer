@@ -7,6 +7,8 @@ class FakeScalars:
         self.value = value
 
     def first(self):
+        if isinstance(self.value, list):
+            return self.value[0] if self.value else None
         return self.value
 
     def all(self):
@@ -100,3 +102,37 @@ def test_record_connector_checks_persists_sanitized_capabilities() -> None:
     shopify = session.connectors[0]
     assert shopify.capabilities == {"read": True, "write": True}
     assert shopify.last_check == {"authenticated": True, "error": None}
+
+
+def test_capability_requires_persisted_successful_connector_check() -> None:
+    session = FakeSession()
+    service = WorkspaceService(session)
+    service.initialize("tenant-a", "workspace-a")
+
+    assert not service.has_capability("tenant-a", ConnectorKind.shopify, "read")
+    service.record_connector_checks(
+        "tenant-a",
+        [
+            {
+                "connector": "shopify",
+                "authenticated": True,
+                "read_capability": True,
+                "write_capability": False,
+                "error": None,
+            }
+        ],
+    )
+
+    assert service.has_capability("tenant-a", ConnectorKind.shopify, "read")
+    assert not service.has_capability("tenant-a", ConnectorKind.shopify, "write")
+
+
+def test_connector_statuses_expose_sanitized_health_state() -> None:
+    session = FakeSession()
+    service = WorkspaceService(session)
+    service.initialize("tenant-a", "workspace-a")
+    statuses = service.connector_statuses("tenant-a")
+
+    assert statuses[0].kind == "shopify"
+    assert statuses[0].capabilities == {"read": False, "write": False}
+    assert statuses[0].last_check == {}

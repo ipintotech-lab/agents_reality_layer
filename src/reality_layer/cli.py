@@ -14,6 +14,7 @@ from reality_layer.connectors import (
 from reality_layer.connectors.observe import Normalizer, observe_payload
 from reality_layer.connectors.onboarding import check_connectors
 from reality_layer.connectors.persistence import ObservationIngestionService
+from reality_layer.db.models import ConnectorKind
 from reality_layer.db.session import SessionLocal
 from reality_layer.storage import LocalObjectStore
 from reality_layer.workspaces import WorkspaceService
@@ -131,6 +132,12 @@ def observe(
     session = None
     try:
         session = SessionLocal() if persist else None
+        if session is not None and not WorkspaceService(session).has_capability(
+            tenant, ConnectorKind(connector), "read"
+        ):
+            raise ValueError(
+                f"{connector} read capability is not enabled for this workspace."
+            )
         if connector == "shopify":
             shopify_client = ShopifyHttpClient(
                 settings.shopify_domain, settings.shopify_access_token

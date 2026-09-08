@@ -21,6 +21,7 @@ from reality_layer.config import Settings, get_settings
 from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
 from reality_layer.connectors.persistence import ObservationIngestionService
+from reality_layer.db.models import ConnectorKind
 from reality_layer.storage import LocalObjectStore
 from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
@@ -80,6 +81,27 @@ def create_app(
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/v1/connectors")
+    def connector_status(
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[dict[str, object]]:
+        if not app_settings.persistence_enabled:
+            return []
+        session = make_session()
+        try:
+            return [
+                {
+                    "connector_id": status.connector_id,
+                    "kind": status.kind,
+                    "display_name": status.display_name,
+                    "capabilities": status.capabilities,
+                    "last_check": status.last_check,
+                }
+                for status in WorkspaceService(session).connector_statuses(x_reality_tenant)
+            ]
+        finally:
+            session.close()
 
     @app.post("/v1/observations", response_model=OrderState, status_code=201)
     def ingest_observation(
@@ -358,6 +380,12 @@ def create_app(
             if app_settings.persistence_enabled:
                 session = make_session()
                 try:
+                    if not WorkspaceService(session).has_capability(
+                        x_reality_tenant, ConnectorKind.shopify, "write"
+                    ):
+                        raise ValueError(
+                            "Shopify write capability is not enabled for this workspace."
+                        )
                     restore_actions(x_reality_tenant, session)
                 finally:
                     session.close()
@@ -392,6 +420,12 @@ def create_app(
             if app_settings.persistence_enabled:
                 session = make_session()
                 try:
+                    if not WorkspaceService(session).has_capability(
+                        x_reality_tenant, ConnectorKind.shopify, "read"
+                    ):
+                        raise ValueError(
+                            "Shopify read capability is not enabled for this workspace."
+                        )
                     restore_actions(x_reality_tenant, session)
                 finally:
                     session.close()

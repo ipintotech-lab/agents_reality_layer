@@ -21,6 +21,15 @@ class WorkspacePolicy:
     value_limit: float | None
 
 
+@dataclass(frozen=True)
+class ConnectorStatus:
+    connector_id: str
+    kind: str
+    display_name: str
+    capabilities: dict[str, object]
+    last_check: dict[str, object]
+
+
 class WorkspaceService:
     """Creates the tenant-scoped workspace baseline without storing credentials."""
 
@@ -137,3 +146,45 @@ class WorkspaceService:
                 "error": result.get("error"),
             }
         self.session.flush()
+
+    def has_capability(self, tenant_id: str, kind: ConnectorKind, capability: str) -> bool:
+        workspace = self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+        if workspace is None:
+            return False
+        connector = self.session.scalars(
+            select(Connector).where(
+                Connector.tenant_id == tenant_id,
+                Connector.workspace_id == workspace.workspace_id,
+                Connector.kind == kind,
+            )
+        ).first()
+        return bool(connector and connector.capabilities.get(capability) is True)
+
+    def connector_statuses(self, tenant_id: str) -> list[ConnectorStatus]:
+        workspace = self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+        if workspace is None:
+            return []
+        connectors = self.session.scalars(
+            select(Connector).where(
+                Connector.tenant_id == tenant_id,
+                Connector.workspace_id == workspace.workspace_id,
+            )
+        ).all()
+        return [
+            ConnectorStatus(
+                connector_id=connector.connector_id,
+                kind=connector.kind,
+                display_name=connector.display_name,
+                capabilities=dict(connector.capabilities),
+                last_check=dict(connector.last_check),
+            )
+            for connector in connectors
+        ]
