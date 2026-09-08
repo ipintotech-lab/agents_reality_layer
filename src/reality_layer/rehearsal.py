@@ -10,6 +10,7 @@ from reality_layer.actions.models import (
 from reality_layer.actions.service import ActionService
 from reality_layer.config import Settings
 from reality_layer.connectors.shopify import ShopifyConnector
+from reality_layer.reality_git import validate_commit_chain, validate_event_chain
 from reality_layer.worker.verifier import VerifierWorker
 from reality_layer.world_state.models import Observation
 from reality_layer.world_state.service import WorldStateService
@@ -87,7 +88,10 @@ def run_local_rehearsal(
 
     final_state = world_state.get_order(tenant_id, order_id)
     commit = world_state.get_commit_for_state(tenant_id, final_state)
-    return actions.proof(decision.action_id, tenant_id, commit=commit)
+    proof = actions.proof(decision.action_id, tenant_id, commit=commit)
+    validate_commit_chain(world_state.list_commits(tenant_id))
+    validate_event_chain(proof.events)
+    return proof
 
 
 def run_local_rehearsals(
