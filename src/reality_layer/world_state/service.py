@@ -135,12 +135,22 @@ class WorldStateService:
     def list_commits(
         self, tenant_id: str, since_commit_id: str | None = None
     ) -> list[CommitRecord]:
-        commits = [
-            commit
-            for (commit_tenant, _), commit in self._commits.items()
-            if commit_tenant == tenant_id
-        ]
-        commits.sort(key=lambda commit: commit.commit_id)
+        latest_commit_id = self._latest_commit.get(tenant_id)
+        if latest_commit_id is None:
+            return []
+
+        commits: list[CommitRecord] = []
+        seen: set[str] = set()
+        current_commit_id = latest_commit_id
+        while current_commit_id is not None and current_commit_id not in seen:
+            commit = self._commits.get((tenant_id, current_commit_id))
+            if commit is None:
+                break
+            commits.append(commit)
+            seen.add(current_commit_id)
+            current_commit_id = commit.parent_commit_id
+        commits.reverse()
+
         if since_commit_id is not None:
             for index, commit in enumerate(commits):
                 if commit.commit_id == since_commit_id:
