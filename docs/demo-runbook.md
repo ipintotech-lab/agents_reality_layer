@@ -84,6 +84,18 @@ Confirm that Shopify read and write capabilities are enabled and that EasyPost r
 access succeeds. Stop the demo if either connector is unauthenticated or the
 designated Shopify order is not an eligible, unfulfilled test order.
 
+The workspace starts in `observe_only`; agent write proposals are denied
+(`deny.workspace.observe_only`) until an operator enables proposal mode:
+
+```bash
+REALITY_PERSISTENCE_ENABLED=true reality workspace --tenant demo                       # show current mode
+REALITY_PERSISTENCE_ENABLED=true reality workspace --tenant demo --mode demo_proposal  # enable proposals
+```
+
+The same transition is available over the API as `POST /v1/workspace/mode`
+(`X-Reality-Role` must be `operations`, `admin`, or `system`), and the current
+mode is shown in the dashboard header and by `GET /v1/workspace`.
+
 ## 3. Observe and inspect
 
 Run bounded reads from both sources:

@@ -133,6 +133,7 @@
       <option>admin</option>
     </select>
   </div>
+  <span id="wsmode" class="badge" title="Workspace mode">mode —</span>
   <button class="action ghost" id="refresh">Refresh</button>
 </header>
 <nav>
@@ -192,6 +193,13 @@ function render() {
   const main = $("#main");
   main.innerHTML = "";
   main.append(el("div", { class: "muted", text: "Loading…" }));
+  api("/v1/workspace")
+    .then((ws) => {
+      const chip = $("#wsmode");
+      chip.textContent = `mode ${ws.mode}${ws.persistent ? "" : " (config)"}`;
+      chip.className = `badge ${ws.mode === "demo_proposal" ? "approved" : "unknown"}`;
+    })
+    .catch(() => {});
   const fn = { world: renderWorld, approval: renderApproval, history: renderHistory }[state.view];
   fn(main).catch((e) => {
     main.innerHTML = "";

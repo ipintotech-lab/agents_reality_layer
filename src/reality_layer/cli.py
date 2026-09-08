@@ -88,6 +88,50 @@ def init(
 
 
 @app.command()
+def workspace(
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    mode: str | None = typer.Option(
+        None, help="Set the workspace mode: observe_only or demo_proposal."
+    ),
+) -> None:
+    """Show or set the workspace mode (the operator gate for agent write proposals)."""
+    settings = get_settings()
+    if not settings.persistence_enabled:
+        typer.echo(
+            "Persistence is disabled; workspace mode is governed by "
+            f"REALITY_WORKSPACE_MODE={settings.workspace_mode!r}.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from reality_layer.db.models import WorkspaceMode
+    from reality_layer.db.session import SessionLocal
+    from reality_layer.workspaces import WorkspaceService
+
+    session = SessionLocal()
+    try:
+        service = WorkspaceService(session)
+        if mode is None:
+            policy = service.policy(tenant)
+            typer.echo(f"{tenant}: mode={policy.mode.value}")
+            return
+        try:
+            target = WorkspaceMode(mode)
+        except ValueError as exc:
+            typer.echo(f"Unknown mode: {mode!r}", err=True)
+            raise typer.Exit(code=2) from exc
+        bootstrap = service.set_mode(tenant, target)
+        session.commit()
+        typer.echo(f"{tenant}: mode set to {bootstrap.mode.value}")
+    except ValueError as exc:
+        session.rollback()
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        session.close()
+
+
+@app.command()
 def connect(
     connector: Annotated[
         list[str], typer.Argument(help="Connector names to check: shopify and/or easypost.")

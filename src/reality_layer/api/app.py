@@ -18,6 +18,7 @@ from reality_layer.actions.models import (
     ProofBundle,
 )
 from reality_layer.actions.persistence import ActionEventPersistenceService
+from reality_layer.api.schemas import WorkspaceModeRequest
 from reality_layer.config import Settings, get_settings
 from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
@@ -121,6 +122,56 @@ def create_app(
             ]
         finally:
             session.close()
+
+    @app.get("/v1/workspace")
+    def workspace_view(
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> dict[str, object]:
+        if not app_settings.persistence_enabled:
+            return {
+                "tenant_id": x_reality_tenant,
+                "mode": app_settings.workspace_mode,
+                "persistent": False,
+                "write_value_limit": app_settings.write_value_limit,
+            }
+        session = make_session()
+        try:
+            policy = WorkspaceService(session).policy(x_reality_tenant)
+        finally:
+            session.close()
+        return {
+            "tenant_id": x_reality_tenant,
+            "mode": policy.mode.value,
+            "persistent": True,
+            "write_value_limit": policy.value_limit,
+        }
+
+    @app.post("/v1/workspace/mode")
+    def set_workspace_mode(
+        request: WorkspaceModeRequest,
+        x_reality_tenant: str = Header(default="demo"),
+        x_reality_role: str = Header(default="observer"),
+    ) -> dict[str, object]:
+        if x_reality_role not in {"operations", "admin", "system"}:
+            raise HTTPException(
+                status_code=403,
+                detail="Only operations, admin, or system may change the workspace mode.",
+            )
+        if not app_settings.persistence_enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="Workspace mode is not persistent; set REALITY_PERSISTENCE_ENABLED=true.",
+            )
+        session = make_session()
+        try:
+            bootstrap = WorkspaceService(session).set_mode(x_reality_tenant, request.mode)
+            session.commit()
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            session.close()
+        return {"tenant_id": x_reality_tenant, "mode": bootstrap.mode.value, "persistent": True}
 
     @app.post("/v1/observations", response_model=OrderState, status_code=201)
     def ingest_observation(

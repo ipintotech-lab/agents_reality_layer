@@ -98,6 +98,37 @@ class WorkspaceService:
             tuple(connector_ids),
         )
 
+    def _primary_workspace(self, tenant_id: str) -> Workspace | None:
+        return self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+
+    def set_mode(self, tenant_id: str, mode: WorkspaceMode) -> WorkspaceBootstrap:
+        """Transition the tenant's workspace between observe-only and demo-proposal.
+
+        This is the explicit operator step required before an agent may propose
+        writes; a fresh workspace always starts in ``observe_only``.
+        """
+        workspace = self._primary_workspace(tenant_id)
+        if workspace is None:
+            raise ValueError(f"No workspace is initialized for tenant {tenant_id}.")
+        workspace.mode = mode
+        self.session.flush()
+        connectors = self.session.scalars(
+            select(Connector).where(
+                Connector.tenant_id == tenant_id,
+                Connector.workspace_id == workspace.workspace_id,
+            )
+        ).all()
+        return WorkspaceBootstrap(
+            workspace.workspace_id,
+            tenant_id,
+            mode,
+            tuple(connector.connector_id for connector in connectors),
+        )
+
     def policy(self, tenant_id: str) -> WorkspacePolicy:
         workspace = self.session.scalars(
             select(Workspace)

@@ -82,6 +82,28 @@ def test_policy_reads_persisted_mode_and_value_limit() -> None:
     assert policy.value_limit == 100.5
 
 
+def test_set_mode_transitions_the_workspace() -> None:
+    session = FakeSession()
+    service = WorkspaceService(session)
+    service.initialize("tenant-a", "workspace-a")
+
+    bootstrap = service.set_mode("tenant-a", WorkspaceMode.demo_proposal)
+
+    assert bootstrap.mode == WorkspaceMode.demo_proposal
+    assert session.workspace.mode == WorkspaceMode.demo_proposal
+    assert service.policy("tenant-a").mode == WorkspaceMode.demo_proposal
+
+    service.set_mode("tenant-a", WorkspaceMode.observe_only)
+    assert session.workspace.mode == WorkspaceMode.observe_only
+
+
+def test_set_mode_requires_an_initialized_workspace() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="No workspace is initialized"):
+        WorkspaceService(FakeSession()).set_mode("tenant-a", WorkspaceMode.demo_proposal)
+
+
 def test_record_connector_checks_persists_sanitized_capabilities() -> None:
     session = FakeSession()
     WorkspaceService(session).initialize("tenant-a", "workspace-a")
