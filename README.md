@@ -62,6 +62,7 @@ REALITY_TEST_DATABASE_URL=postgresql+psycopg://... pytest tests/integration
 | --- | --- |
 | [`docs/reality-layer-technical-architecture.md`](docs/reality-layer-technical-architecture.md) | Full v2.0 technical architecture |
 | [`docs/mvp-design.md`](docs/mvp-design.md) | MVP scope, build plan, and technical decisions |
+| [`docs/demo-runbook.md`](docs/demo-runbook.md) | Local fallback and live demo operating procedure |
 
 ## MVP at a glance
 
