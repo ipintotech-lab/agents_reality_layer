@@ -78,6 +78,24 @@ def create_app(
         except KeyError:
             return None
 
+    def hydrate_persisted_state(
+        tenant_id: str, entity_id: str, compiler: CompilerPersistenceService
+    ) -> OrderState | None:
+        existing = compiler.load_state(tenant_id, entity_id)
+        if existing is None:
+            return None
+        previous_commit = (
+            compiler.load_commit(tenant_id, existing.commit_id)
+            if existing.commit_id
+            else None
+        )
+        world_state_service.hydrate(
+            existing,
+            existing.commit_id,
+            previous_commit.hash if previous_commit else None,
+        )
+        return existing
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
@@ -417,41 +435,66 @@ def create_app(
         x_reality_tenant: str = Header(default="demo"),
     ) -> ActionDecision:
         try:
+            session: Session | None = None
             if app_settings.persistence_enabled:
                 session = make_session()
-                try:
-                    if not WorkspaceService(session).has_capability(
-                        x_reality_tenant, ConnectorKind.shopify, "read"
-                    ):
-                        raise ValueError(
-                            "Shopify read capability is not enabled for this workspace."
-                        )
-                    restore_actions(x_reality_tenant, session)
-                finally:
-                    session.close()
+                if not WorkspaceService(session).has_capability(
+                    x_reality_tenant, ConnectorKind.shopify, "read"
+                ):
+                    raise ValueError(
+                        "Shopify read capability is not enabled for this workspace."
+                    )
+                restore_actions(x_reality_tenant, session)
             proposal = action_service.get_proposal(action_id, x_reality_tenant)
             order_id = proposal.target_entity.removeprefix("order:")
             observed = shopify_connector.read_order(order_id)
             observation = shopify_connector.normalize(observed)
-            state = world_state_service.ingest(
-                x_reality_tenant,
-                observation,
-                cause="verified_action",
-                assurance_level="verified",
-            )
+            if session is None:
+                state = world_state_service.ingest(
+                    x_reality_tenant,
+                    observation,
+                    cause="verified_action",
+                    assurance_level="verified",
+                )
+            else:
+                stored = object_store.put_raw_payload(
+                    x_reality_tenant,
+                    observation.model_dump_json().encode(),
+                    "application/json",
+                )
+                persisted = ObservationIngestionService(session).persist(
+                    x_reality_tenant, ObservedPayload(observation, stored)
+                )
+                compiler = CompilerPersistenceService(session)
+                hydrate_persisted_state(
+                    x_reality_tenant,
+                    f"{observation.object_type}:{observation.object_id}",
+                    compiler,
+                )
+                state = world_state_service.ingest(
+                    x_reality_tenant,
+                    observation,
+                    cause="verified_action",
+                    assurance_level="verified",
+                )
+                if persisted.created:
+                    compiler.persist(
+                        state, world_state_service.get_commit_for_state(
+                            x_reality_tenant, state
+                        )
+                    )
             decision = action_service.verify(action_id, x_reality_tenant, state)
-            if app_settings.persistence_enabled:
-                session = make_session()
-                try:
-                    persist_action_events(x_reality_tenant, action_id, session)
-                    session.commit()
-                finally:
-                    session.close()
+            if session is not None:
+                persist_action_events(x_reality_tenant, action_id, session)
+                session.commit()
             return decision
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            if session is not None:
+                session.close()
 
     @app.get("/v1/actions/{action_id}/proof", response_model=ProofBundle)
     def action_proof(
