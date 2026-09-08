@@ -77,6 +77,13 @@ class ActionEventRecord(BaseModel):
     event_hash: str
 
 
+class ActionStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: ActionDecision
+    events: list[ActionEventRecord]
+
+
 class ActorIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

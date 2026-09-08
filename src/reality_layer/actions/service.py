@@ -82,12 +82,21 @@ class ActionService:
         return decision
 
     def restore(self, event: ActionEventRecord) -> None:
+        if event.event_id in {
+            existing.event_id
+            for events in self._events.values()
+            for existing in events
+        }:
+            return
         if event.event_type != "policy_evaluated":
             action = self._actions.get(event.action_id)
             if action is None:
                 return
             self._apply_restored_event(action, event)
             self._events.setdefault(event.action_id, []).append(event)
+            if event.event_type == "provider_accepted":
+                receipt = ExecutionReceipt.model_validate(event.payload)
+                self._executions[(event.tenant_id, receipt.idempotency_key)] = receipt
             return
         proposal_data = event.payload.get("proposal")
         decision_data = event.payload.get("decision")
@@ -215,6 +224,11 @@ class ActionService:
         action = self._get(action_id)
         self._check_tenant(action, tenant_id)
         return action.proposal
+
+    def get_decision(self, action_id: str, tenant_id: str = "demo") -> ActionDecision:
+        action = self._get(action_id)
+        self._check_tenant(action, tenant_id)
+        return action.decision
 
     #: Verification outcomes that end the polling loop.
     TERMINAL_VERIFICATION_STATUSES = frozenset(

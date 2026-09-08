@@ -16,6 +16,7 @@ from reality_layer.connectors.onboarding import check_connectors
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.db.session import SessionLocal
 from reality_layer.storage import LocalObjectStore
+from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
     CompilerPersistenceService,
     OrderState,
@@ -51,8 +52,33 @@ def main(
 
 
 @app.command()
-def init() -> None:
-    typer.echo("Initialized observe-only Reality Layer workspace.")
+def init(
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    workspace: str | None = typer.Option(None, help="Optional workspace identifier."),
+) -> None:
+    """Initialize an observe-only workspace and connector configuration."""
+    settings = get_settings()
+    if not settings.persistence_enabled:
+        typer.echo(
+            "Persistence is disabled; set REALITY_PERSISTENCE_ENABLED=true "
+            "to initialize a durable workspace.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    session = SessionLocal()
+    try:
+        created = WorkspaceService(session).initialize(tenant, workspace)
+        session.commit()
+    except (RuntimeError, ValueError, OSError) as exc:
+        session.rollback()
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        session.close()
+    typer.echo(
+        f"Initialized workspace {created.workspace_id} for tenant {created.tenant_id} "
+        f"in {created.mode.value} mode; connectors={','.join(created.connector_ids)}"
+    )
 
 
 @app.command()
@@ -60,10 +86,12 @@ def connect(
     connector: Annotated[
         list[str], typer.Argument(help="Connector names to check: shopify and/or easypost.")
     ],
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
 ) -> None:
     """Validate configured connector access without printing credentials."""
+    settings = get_settings()
     try:
-        results = check_connectors(connector, get_settings())
+        results = check_connectors(connector, settings)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -75,6 +103,17 @@ def connect(
         )
         if result["error"]:
             typer.echo(f"  error: {result['error']}", err=True)
+    if settings.persistence_enabled:
+        session = SessionLocal()
+        try:
+            WorkspaceService(session).record_connector_checks(tenant, results)
+            session.commit()
+        except (RuntimeError, ValueError, OSError) as exc:
+            session.rollback()
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        finally:
+            session.close()
     if not all(bool(result["authenticated"]) for result in results):
         raise typer.Exit(code=1)
 

@@ -4,6 +4,35 @@
 **Scope authority:** This document supersedes the original broad MVP scope for the investor demo.  
 **Companion document:** `reality-layer-technical-architecture.md`
 
+### Implementation status
+
+The repository currently contains a working MVP prototype for:
+
+- tenant-scoped observations and World State projections;
+- provenance, confidence, and freshness metadata;
+- typed action proposals and default-deny policy evaluation;
+- approval/rejection with precondition revalidation;
+- idempotent Shopify test-adapter execution;
+- independent read-after-write verification;
+- hash-linked action events and commits;
+- proof bundles and bounded verifier-worker polling;
+- optional PostgreSQL persistence and restart-safe action event restoration;
+- REST action status and semantic diff history endpoints.
+
+The following are partial or planned rather than complete MVP capabilities:
+
+- full competing-claim conflict detection and resolution workflows;
+- field-level permission filtering and ABAC;
+- durable HITL expiry, delegation, supersession, and scoped approvals;
+- MCP adapter, SDK, and dashboard;
+- complete workspace and connector persistence;
+- live Shopify/EasyPost behavior validation;
+- signed attestations or external notarization.
+
+The product contract requires each new workspace to start in `observe_only` mode. Until
+durable workspace initialization is complete, the demo runtime uses an explicit
+`demo_proposal` configuration exception.
+
 > Build the smallest reliable system that proves an AI agent can act on a real business system without requiring the business to blindly trust either the agent or the API response.
 
 ---
@@ -51,14 +80,14 @@ The MVP must demonstrate that:
 | Connectors | Shopify orders and EasyPost shipment/tracking observations |
 | World State | Orders and shipments with provenance, confidence, and freshness |
 | Compiler | Ingest, normalize, deterministic resolution, scoring, projection, commit |
-| Agent interface | REST API as the canonical interface; thin MCP adapter for the live agent demo |
+| Agent interface | REST API is implemented and canonical; thin MCP adapter remains planned |
 | Policy | Default-deny writes, Observe-only workspace, RBAC templates, value/risk threshold |
 | HITL | One authenticated approval or rejection step |
 | Real action | `cancel_order` against a designated Shopify test order |
 | Proposal-only actions | `update_shipping_address`, `hold_order` |
 | Verification | Polling read-after-write against Shopify until success or timeout |
 | Audit | Append-only observations, commits, action events, and hash chain |
-| Dashboard | World State, Approval, and History/Proof screens |
+| Dashboard | Planned; current MVP is API and worker focused |
 | Storage | PostgreSQL 16 with JSONB; S3-compatible raw-payload storage |
 | CLI | `reality init`, `reality connect`, `reality observe`, `reality serve` |
 
@@ -769,4 +798,3 @@ After the Demo Slice is proven, expand in this order:
 6. Policy-as-code and richer authorization.
 7. Signed proof bundles and external integrity anchoring.
 8. Production packaging, operational dashboards, and self-hosted deployment.
-

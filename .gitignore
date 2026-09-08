@@ -54,3 +54,6 @@ Thumbs.db
 *.log
 tmp/
 .scratch/
+
+# Graphify local development artifacts
+graphify-out/

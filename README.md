@@ -15,9 +15,22 @@ custom orchestrators.
 
 ## Status
 
-Phase 0 foundation implementation started. The current codebase contains the initial Python
-package scaffold, API health endpoint, database model/migration foundation, and Reality Git
-canonical hashing utilities.
+Investor MVP prototype in active development on the `verifier-worker` branch. The current
+codebase contains a working Order-to-Cash control loop with tenant-scoped observations,
+World State projections, typed action proposals, default-deny policy evaluation,
+precondition revalidation, idempotent Shopify test-adapter execution, independent
+read-after-write verification, hash-linked action/commit events, proof bundles, bounded
+verifier-worker polling, and optional PostgreSQL persistence.
+
+The following remain partial or planned: full conflict claims and resolution workflows,
+field-level permission filtering and ABAC, durable HITL expiry/delegation/supersession,
+the MCP adapter and SDK, complete workspace/connector persistence, live Shopify/EasyPost
+validation, signed attestations, and dashboard/demo UI. REST is currently the canonical
+active interface.
+
+The product contract requires new workspaces to start in `observe_only` mode. The current
+demo runtime uses an explicit `demo_proposal` configuration exception until durable
+workspace initialization is complete.
 
 ## Development
 

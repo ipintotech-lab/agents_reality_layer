@@ -121,6 +121,22 @@ class WorldStateService:
     def get_commit_for_state(self, tenant_id: str, state: OrderState) -> CommitRecord:
         return self.get_commit(tenant_id, state.commit_id)
 
+    def list_commits(
+        self, tenant_id: str, since_commit_id: str | None = None
+    ) -> list[CommitRecord]:
+        commits = [
+            commit
+            for (commit_tenant, _), commit in self._commits.items()
+            if commit_tenant == tenant_id
+        ]
+        commits.sort(key=lambda commit: commit.commit_id)
+        if since_commit_id is not None:
+            for index, commit in enumerate(commits):
+                if commit.commit_id == since_commit_id:
+                    return commits[index + 1 :]
+            raise KeyError(f"Unknown commit: {since_commit_id}")
+        return commits
+
     def _latest_hash(self, tenant_id: str) -> str | None:
         commit_id = self._latest_commit.get(tenant_id)
         return self._commits[(tenant_id, commit_id)].hash if commit_id else None

@@ -94,3 +94,32 @@ class CompilerPersistenceService:
             previous_hash=row.previous_hash,
             hash=row.hash,
         )
+
+    def list_commits(
+        self, tenant_id: str, since_commit_id: str | None = None
+    ) -> list[CommitRecord]:
+        rows = self.commits.list_for_tenant(tenant_id)
+        commits = [
+            CommitRecord(
+                commit_id=row.commit_id,
+                tenant_id=row.tenant_id,
+                parent_commit_id=row.parent_commit_id,
+                entity_type=row.entity_type,
+                entity_id=row.entity_id,
+                cause=row.cause,
+                observation_ids=list(row.observation_ids),
+                before=row.before,
+                after=row.after,
+                semantic_diff=row.semantic_diff,
+                assurance_level=row.assurance_level,
+                previous_hash=row.previous_hash,
+                hash=row.hash,
+            )
+            for row in rows
+        ]
+        if since_commit_id is not None:
+            for index, commit in enumerate(commits):
+                if commit.commit_id == since_commit_id:
+                    return commits[index + 1 :]
+            raise KeyError(f"Unknown commit: {since_commit_id}")
+        return commits
