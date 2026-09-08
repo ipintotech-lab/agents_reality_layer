@@ -103,3 +103,37 @@ class WorkspaceService:
         except (TypeError, ValueError) as exc:
             raise ValueError("Workspace write value limit must be numeric.") from exc
         return WorkspacePolicy(WorkspaceMode(workspace.mode), value_limit)
+
+    def record_connector_checks(
+        self, tenant_id: str, results: list[dict[str, object]]
+    ) -> None:
+        workspace = self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+        if workspace is None:
+            raise ValueError(f"No workspace is initialized for tenant {tenant_id}.")
+        connectors = {
+            connector.kind: connector
+            for connector in self.session.scalars(
+                select(Connector).where(
+                    Connector.tenant_id == tenant_id,
+                    Connector.workspace_id == workspace.workspace_id,
+                )
+            ).all()
+        }
+        for result in results:
+            name = result.get("connector")
+            if not isinstance(name, str) or name not in connectors:
+                raise ValueError(f"Connector is not configured for workspace: {name!r}.")
+            connector = connectors[name]
+            connector.capabilities = {
+                "read": bool(result.get("read_capability")),
+                "write": bool(result.get("write_capability")),
+            }
+            connector.last_check = {
+                "authenticated": bool(result.get("authenticated")),
+                "error": result.get("error"),
+            }
+        self.session.flush()

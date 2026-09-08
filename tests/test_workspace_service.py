@@ -78,3 +78,25 @@ def test_policy_reads_persisted_mode_and_value_limit() -> None:
 
     assert policy.mode == WorkspaceMode.demo_proposal
     assert policy.value_limit == 100.5
+
+
+def test_record_connector_checks_persists_sanitized_capabilities() -> None:
+    session = FakeSession()
+    WorkspaceService(session).initialize("tenant-a", "workspace-a")
+
+    WorkspaceService(session).record_connector_checks(
+        "tenant-a",
+        [
+            {
+                "connector": "shopify",
+                "authenticated": True,
+                "read_capability": True,
+                "write_capability": True,
+                "error": None,
+            }
+        ],
+    )
+
+    shopify = session.connectors[0]
+    assert shopify.capabilities == {"read": True, "write": True}
+    assert shopify.last_check == {"authenticated": True, "error": None}

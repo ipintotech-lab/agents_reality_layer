@@ -86,10 +86,12 @@ def connect(
     connector: Annotated[
         list[str], typer.Argument(help="Connector names to check: shopify and/or easypost.")
     ],
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
 ) -> None:
     """Validate configured connector access without printing credentials."""
+    settings = get_settings()
     try:
-        results = check_connectors(connector, get_settings())
+        results = check_connectors(connector, settings)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -101,6 +103,17 @@ def connect(
         )
         if result["error"]:
             typer.echo(f"  error: {result['error']}", err=True)
+    if settings.persistence_enabled:
+        session = SessionLocal()
+        try:
+            WorkspaceService(session).record_connector_checks(tenant, results)
+            session.commit()
+        except (RuntimeError, ValueError, OSError) as exc:
+            session.rollback()
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        finally:
+            session.close()
     if not all(bool(result["authenticated"]) for result in results):
         raise typer.Exit(code=1)
 
