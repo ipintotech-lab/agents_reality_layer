@@ -57,3 +57,6 @@ tmp/
 
 # Graphify local development artifacts
 graphify-out/
+
+# Rehearsal / demo output bundles
+artifacts/
