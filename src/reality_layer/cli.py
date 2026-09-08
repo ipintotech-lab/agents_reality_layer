@@ -88,6 +88,50 @@ def init(
 
 
 @app.command()
+def workspace(
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    mode: str | None = typer.Option(
+        None, help="Set the workspace mode: observe_only or demo_proposal."
+    ),
+) -> None:
+    """Show or set the workspace mode (the operator gate for agent write proposals)."""
+    settings = get_settings()
+    if not settings.persistence_enabled:
+        typer.echo(
+            "Persistence is disabled; workspace mode is governed by "
+            f"REALITY_WORKSPACE_MODE={settings.workspace_mode!r}.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from reality_layer.db.models import WorkspaceMode
+    from reality_layer.db.session import SessionLocal
+    from reality_layer.workspaces import WorkspaceService
+
+    session = SessionLocal()
+    try:
+        service = WorkspaceService(session)
+        if mode is None:
+            policy = service.policy(tenant)
+            typer.echo(f"{tenant}: mode={policy.mode.value}")
+            return
+        try:
+            target = WorkspaceMode(mode)
+        except ValueError as exc:
+            typer.echo(f"Unknown mode: {mode!r}", err=True)
+            raise typer.Exit(code=2) from exc
+        bootstrap = service.set_mode(tenant, target)
+        session.commit()
+        typer.echo(f"{tenant}: mode set to {bootstrap.mode.value}")
+    except ValueError as exc:
+        session.rollback()
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        session.close()
+
+
+@app.command()
 def connect(
     connector: Annotated[
         list[str], typer.Argument(help="Connector names to check: shopify and/or easypost.")
@@ -319,12 +363,44 @@ def rehearse(
     summary: bool = typer.Option(
         False, "--summary", help="Emit an operator-facing run summary instead of full proofs."
     ),
+    fault: str = typer.Option(
+        "none",
+        "--fault",
+        help="Inject a failure: none, provider_error, or verification_divergence.",
+    ),
 ) -> None:
     """Run isolated complete MVP loops with the deterministic local Shopify adapter."""
     import json
     import time
 
-    from reality_layer.rehearsal import rehearsal_summary, run_local_rehearsals
+    from reality_layer.rehearsal import (
+        RehearsalFault,
+        rehearsal_scenario_summary,
+        rehearsal_summary,
+        run_local_rehearsals,
+        run_rehearsals,
+    )
+
+    try:
+        injected = RehearsalFault(fault)
+    except ValueError as exc:
+        typer.echo(f"Unknown fault: {fault!r}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    if injected is not RehearsalFault.none:
+        try:
+            started = time.perf_counter()
+            results = run_rehearsals(tenant, order, runs, fault=injected)
+            elapsed_seconds = time.perf_counter() - started
+        except (RuntimeError, ValueError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        scenario = rehearsal_scenario_summary(results, elapsed_seconds)
+        typer.echo(json.dumps(scenario, indent=2, sort_keys=True))
+        if not scenario["all_protected"]:
+            typer.echo("Rehearsal did not fail safe for every run.", err=True)
+            raise typer.Exit(code=1)
+        return
 
     try:
         started = time.perf_counter()
@@ -333,6 +409,7 @@ def rehearse(
     except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
     payload = (
         rehearsal_summary(proofs, elapsed_seconds)
         if summary

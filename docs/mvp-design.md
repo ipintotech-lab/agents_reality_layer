@@ -20,7 +20,13 @@ The repository currently contains a working MVP prototype for:
 - REST action status and semantic diff history endpoints;
 - a read-only operator dashboard (World State, Approval, History/Proof) served at `/`;
 - a scripted agent demo (`reality demo`) that drives the happy, policy-control, and
-  proposal-only paths through the public MCP and REST contracts.
+  proposal-only paths through the public MCP and REST contracts;
+- durable workspace mode transitions (`observe_only` <-> `demo_proposal`) via the
+  `reality workspace` CLI and the `GET /v1/workspace` / `POST /v1/workspace/mode`
+  endpoints, role-gated to operations/admin/system;
+- rehearsal fault injection (`reality rehearse --fault provider_error |
+  verification_divergence`) with per-step latency capture, proving the loop
+  reaches a protective terminal status instead of a false `verified`.
 
 The following are partial or planned rather than complete MVP capabilities:
 
@@ -32,9 +38,11 @@ The following are partial or planned rather than complete MVP capabilities:
 - live Shopify/EasyPost behavior validation;
 - signed attestations or external notarization.
 
-The product contract requires each new workspace to start in `observe_only` mode. Until
-durable workspace initialization is complete, the demo runtime uses an explicit
-`demo_proposal` configuration exception.
+The product contract requires each new workspace to start in `observe_only` mode. With
+persistence enabled, an operator moves the workspace to `demo_proposal` explicitly
+(`reality workspace --mode demo_proposal` or `POST /v1/workspace/mode`) before an agent
+may propose writes. Without persistence, the demo runtime falls back to an explicit
+`REALITY_WORKSPACE_MODE` configuration setting.
 
 > Build the smallest reliable system that proves an AI agent can act on a real business system without requiring the business to blindly trust either the agent or the API response.
 

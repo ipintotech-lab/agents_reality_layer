@@ -30,6 +30,23 @@ Capture a static proof bundle when needed:
 reality rehearse --output artifacts/rehearsal-proof.json
 ```
 
+The `--summary` output includes `elapsed_seconds`; five runs should complete well
+inside the three-to-four-minute demo window.
+
+### Failure injection
+
+Prove the loop fails safe rather than claiming an unverified write:
+
+```bash
+reality rehearse --runs 3 --fault provider_error           # provider rejects the write
+reality rehearse --runs 3 --fault verification_divergence  # source still reports the order open
+```
+
+Each fault run emits a scenario summary with `all_protected`, per-run
+`terminal_statuses`, and `slowest_step_ms` latency. The command exits non-zero
+unless every run reaches its protective terminal status (`approved` with no proof
+for `provider_error`; `state_diverged` for `verification_divergence`).
+
 ## 1a. Scripted agent walkthrough
 
 Run the scripted agent demo, which drives the happy path, the policy-control
@@ -83,6 +100,18 @@ REALITY_PERSISTENCE_ENABLED=true reality preflight --tenant demo --order-id 123
 Confirm that Shopify read and write capabilities are enabled and that EasyPost read
 access succeeds. Stop the demo if either connector is unauthenticated or the
 designated Shopify order is not an eligible, unfulfilled test order.
+
+The workspace starts in `observe_only`; agent write proposals are denied
+(`deny.workspace.observe_only`) until an operator enables proposal mode:
+
+```bash
+REALITY_PERSISTENCE_ENABLED=true reality workspace --tenant demo                       # show current mode
+REALITY_PERSISTENCE_ENABLED=true reality workspace --tenant demo --mode demo_proposal  # enable proposals
+```
+
+The same transition is available over the API as `POST /v1/workspace/mode`
+(`X-Reality-Role` must be `operations`, `admin`, or `system`), and the current
+mode is shown in the dashboard header and by `GET /v1/workspace`.
 
 ## 3. Observe and inspect
 
