@@ -193,6 +193,35 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    def list_world_state(
+        tenant_id: str, entity_type: str | None = None
+    ) -> list[OrderState]:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                states = CompilerPersistenceService(session).list_states(
+                    tenant_id, entity_type
+                )
+            finally:
+                session.close()
+            if states:
+                return states
+        return world_state_service.list_entities(tenant_id, entity_type)
+
+    @app.get("/v1/world-state", response_model=list[OrderState])
+    def get_world_state(
+        entity_type: str | None = None,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[OrderState]:
+        return list_world_state(x_reality_tenant, entity_type)
+
+    @app.get("/v1/entities", response_model=list[OrderState])
+    def list_entities(
+        entity_type: str | None = None,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[OrderState]:
+        return list_world_state(x_reality_tenant, entity_type)
+
     @app.get("/v1/shipments/{shipment_id}", response_model=OrderState)
     def get_shipment(
         shipment_id: str,

@@ -112,6 +112,17 @@ class WorldStateService:
         except KeyError as exc:
             raise KeyError(f"Unknown {entity_type}: {entity_id}") from exc
 
+    def list_entities(
+        self, tenant_id: str, entity_type: str | None = None
+    ) -> list[OrderState]:
+        states = [
+            state
+            for (state_tenant, state_type, _), state in self._states.items()
+            if state_tenant == tenant_id
+            and (entity_type is None or state_type == entity_type.lower())
+        ]
+        return sorted(states, key=lambda state: state.entity_id)
+
     def get_commit(self, tenant_id: str, commit_id: str) -> CommitRecord:
         try:
             return self._commits[(tenant_id, commit_id)]

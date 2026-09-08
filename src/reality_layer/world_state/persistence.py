@@ -75,6 +75,25 @@ class CompilerPersistenceService:
             commit_id=row.producing_commit_id or "",
         )
 
+    def list_states(
+        self, tenant_id: str, entity_type: str | None = None
+    ) -> list[OrderState]:
+        rows = self.projections.list_for_tenant(tenant_id, entity_type)
+        return [
+            OrderState(
+                tenant_id=tenant_id,
+                entity_id=row.entity_id,
+                entity_type=row.entity_type,
+                state_version=row.state_version,
+                attributes={
+                    name: StateAttribute.model_validate(attribute)
+                    for name, attribute in row.attributes.items()
+                },
+                commit_id=row.producing_commit_id or "",
+            )
+            for row in rows
+        ]
+
     def load_commit(self, tenant_id: str, commit_id: str) -> CommitRecord | None:
         row = self.commits.get(tenant_id, commit_id)
         if row is None:
