@@ -30,6 +30,24 @@ Capture a static proof bundle when needed:
 reality rehearse --output artifacts/rehearsal-proof.json
 ```
 
+## 1a. Scripted agent walkthrough
+
+Run the scripted agent demo, which drives the happy path, the policy-control
+denial, and the proposal-only path entirely through the public MCP and REST
+contracts:
+
+```bash
+reality demo --order demo-1001
+```
+
+The transcript attributes each step to an actor (`agent` / `operator` /
+`system`) and a channel (`mcp` / `rest`). The run exits non-zero unless the
+happy path reaches `assurance_level=verified`. Add `--proof` to print, or
+`--output artifacts/demo-proof.json` to save, the happy-path proof bundle.
+
+The same three screens are visible in the dashboard at `/` while the loop runs
+(`reality serve`).
+
 ## 2. Live preflight
 
 Set connector credentials through the runtime secret mechanism. Do not place them in

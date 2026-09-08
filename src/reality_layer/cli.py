@@ -350,6 +350,45 @@ def rehearse(
 
 
 @app.command()
+def demo(
+    tenant: str = typer.Option("demo", help="Tenant identifier for the scripted demo."),
+    order: str = typer.Option("demo-1001", help="Order identifier for the scripted demo."),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write the happy-path proof bundle JSON here."),
+    ] = None,
+    proof: bool = typer.Option(
+        False, "--proof", help="Print the proof bundle JSON instead of the transcript."
+    ),
+) -> None:
+    """Run the scripted agent demo through the public MCP and REST contracts."""
+    import json
+
+    from reality_layer.demo import demo_transcript, run_agent_demo
+
+    try:
+        run = run_agent_demo(tenant, order)
+    except (RuntimeError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(run.proof, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        typer.echo(f"Wrote proof bundle to {output}")
+
+    if proof:
+        typer.echo(json.dumps(run.proof, indent=2, sort_keys=True))
+    else:
+        typer.echo(demo_transcript(run))
+
+    if not run.verified:
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host."),
     port: int = typer.Option(8000, help="Bind port."),

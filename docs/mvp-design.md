@@ -18,7 +18,9 @@ The repository currently contains a working MVP prototype for:
 - proof bundles and bounded verifier-worker polling;
 - optional PostgreSQL persistence and restart-safe action event restoration;
 - REST action status and semantic diff history endpoints;
-- a read-only operator dashboard (World State, Approval, History/Proof) served at `/`.
+- a read-only operator dashboard (World State, Approval, History/Proof) served at `/`;
+- a scripted agent demo (`reality demo`) that drives the happy, policy-control, and
+  proposal-only paths through the public MCP and REST contracts.
 
 The following are partial or planned rather than complete MVP capabilities:
 
