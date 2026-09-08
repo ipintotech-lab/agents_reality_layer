@@ -222,6 +222,29 @@ def create_app(
     ) -> list[OrderState]:
         return list_world_state(x_reality_tenant, entity_type)
 
+    @app.get("/v1/entities/{entity_type}/{entity_id}", response_model=OrderState)
+    def get_entity(
+        entity_type: str,
+        entity_id: str,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> OrderState:
+        if entity_type not in {"order", "shipment"}:
+            raise HTTPException(status_code=404, detail=f"Unknown entity type: {entity_type}")
+        try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    state = CompilerPersistenceService(session).load_state(
+                        x_reality_tenant, f"{entity_type}:{entity_id}"
+                    )
+                finally:
+                    session.close()
+                if state is not None:
+                    return state
+            return world_state_service.get_entity(x_reality_tenant, entity_type, entity_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/v1/shipments/{shipment_id}", response_model=OrderState)
     def get_shipment(
         shipment_id: str,

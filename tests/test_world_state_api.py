@@ -48,3 +48,24 @@ def test_world_state_and_entity_queries_return_tenant_scoped_entities() -> None:
         headers={"X-Reality-Tenant": "tenant-a"},
     )
     assert [item["entity_id"] for item in orders.json()] == ["order:order-1"]
+
+    entity = client.get(
+        "/v1/entities/order/order-1",
+        headers={"X-Reality-Tenant": "tenant-a"},
+    )
+    assert entity.status_code == 200
+    assert entity.json()["entity_id"] == "order:order-1"
+
+    hidden = client.get(
+        "/v1/entities/order/order-1",
+        headers={"X-Reality-Tenant": "tenant-b"},
+    )
+    assert hidden.status_code == 404
+
+
+def test_generic_entity_query_rejects_unknown_entity_type() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/v1/entities/customer/customer-1")
+
+    assert response.status_code == 404
