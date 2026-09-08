@@ -46,6 +46,8 @@ adapter:
 reality rehearse
 ```
 
+Use `--runs 5` to verify that repeated local rehearsals remain isolated and reset-safe.
+
 PostgreSQL persistence coverage is opt-in and expects a disposable database:
 
 ```bash

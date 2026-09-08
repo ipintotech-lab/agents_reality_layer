@@ -88,3 +88,20 @@ def run_local_rehearsal(
     final_state = world_state.get_order(tenant_id, order_id)
     commit = world_state.get_commit_for_state(tenant_id, final_state)
     return actions.proof(decision.action_id, tenant_id, commit=commit)
+
+
+def run_local_rehearsals(
+    tenant_id: str = "demo",
+    order_id: str = "rehearsal-order",
+    runs: int = 1,
+) -> list[ProofBundle]:
+    """Run isolated rehearsals repeatedly to verify reset-safe demo behavior."""
+    if runs < 1:
+        raise ValueError("Rehearsal runs must be at least 1.")
+    return [
+        run_local_rehearsal(
+            tenant_id,
+            order_id if runs == 1 else f"{order_id}-{index}",
+        )
+        for index in range(1, runs + 1)
+    ]

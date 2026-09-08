@@ -236,18 +236,24 @@ def verify(
 def rehearse(
     tenant: str = typer.Option("demo", help="Tenant identifier for the local rehearsal."),
     order: str = typer.Option("rehearsal-order", help="Order identifier for the local rehearsal."),
+    runs: int = typer.Option(
+        1, min=1, max=100, help="Number of isolated rehearsals to execute."
+    ),
 ) -> None:
-    """Run the complete MVP loop with the deterministic local Shopify adapter."""
+    """Run isolated complete MVP loops with the deterministic local Shopify adapter."""
     import json
 
-    from reality_layer.rehearsal import run_local_rehearsal
+    from reality_layer.rehearsal import run_local_rehearsals
 
     try:
-        proof = run_local_rehearsal(tenant, order)
+        proofs = run_local_rehearsals(tenant, order, runs)
     except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True))
+    payload = proofs[0].model_dump(mode="json") if runs == 1 else [
+        proof.model_dump(mode="json") for proof in proofs
+    ]
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
 @app.command()
