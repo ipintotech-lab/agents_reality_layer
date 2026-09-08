@@ -17,14 +17,17 @@ The repository currently contains a working MVP prototype for:
 - hash-linked action events and commits;
 - proof bundles and bounded verifier-worker polling;
 - optional PostgreSQL persistence and restart-safe action event restoration;
-- REST action status and semantic diff history endpoints.
+- REST action status and semantic diff history endpoints;
+- a read-only operator dashboard (World State, Approval, History/Proof) served at `/`;
+- a scripted agent demo (`reality demo`) that drives the happy, policy-control, and
+  proposal-only paths through the public MCP and REST contracts.
 
 The following are partial or planned rather than complete MVP capabilities:
 
 - full competing-claim conflict detection and resolution workflows;
 - field-level permission filtering and ABAC;
 - durable HITL expiry, delegation, supersession, and scoped approvals;
-- MCP adapter, SDK, and dashboard;
+- agent SDK and dashboard permission filtering / provenance drill-down;
 - complete workspace and connector persistence;
 - live Shopify/EasyPost behavior validation;
 - signed attestations or external notarization.
