@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reality Layer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222c;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #5b9dff;
+    --good: #35c759;
+    --warn: #ffcc00;
+    --bad: #ff453a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.2px; }
+  header .spacer { flex: 1; }
+  header label { color: var(--muted); font-size: 12px; margin-right: 4px; }
+  header input, header select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font: inherit;
+  }
+  nav {
+    display: flex;
+    gap: 4px;
+    padding: 8px 20px 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    padding: 8px 14px;
+    font: inherit;
+    cursor: pointer;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .muted { color: var(--muted); }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; margin: 8px 0; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  pre {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border: 1px solid var(--border);
+  }
+  .badge.verified, .badge.approved, .badge.provider_accepted { color: var(--good); border-color: var(--good); }
+  .badge.approval_required, .badge.verification_pending, .badge.proposed { color: var(--warn); border-color: var(--warn); }
+  .badge.denied, .badge.rejected, .badge.verification_failed, .badge.state_diverged, .badge.precondition_failed { color: var(--bad); border-color: var(--bad); }
+  button.action {
+    background: var(--accent);
+    color: #06122b;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.action.ghost { background: none; color: var(--muted); border: 1px solid var(--border); }
+  button.action.danger { background: var(--bad); color: #2b0705; }
+  .timeline { list-style: none; padding: 0; margin: 8px 0 0; }
+  .timeline li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .warn-list { color: var(--warn); margin: 8px 0 0; padding-left: 18px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .err { color: var(--bad); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reality Layer</h1>
+  <div class="spacer"></div>
+  <div><label for="tenant">Tenant</label><input id="tenant" value="demo" size="10" /></div>
+  <div>
+    <label for="role">Role</label>
+    <select id="role">
+      <option>observer</option>
+      <option selected>operations</option>
+      <option>admin</option>
+    </select>
+  </div>
+  <button class="action ghost" id="refresh">Refresh</button>
+</header>
+<nav>
+  <button data-view="world" class="active">World State</button>
+  <button data-view="approval">Approval</button>
+  <button data-view="history">History &amp; Proof</button>
+</nav>
+<main id="main"></main>
+
+<script>
+const state = {
+  view: "world",
+  tenant: localStorage.getItem("rl.tenant") || "demo",
+  role: localStorage.getItem("rl.role") || "operations",
+  selectedAction: null,
+};
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids) n.append(kid);
+  return n;
+};
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Reality-Tenant": state.tenant,
+      "X-Reality-Role": state.role,
+      ...(opts.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail = body && body.detail ? body.detail : res.statusText;
+    throw new Error(`${res.status} ${detail}`);
+  }
+  return body;
+}
+
+const badge = (status) => el("span", { class: `badge ${status}`, text: status || "unknown" });
+const fmtTime = (t) => (t ? new Date(t).toLocaleString() : "—");
+const jsonBlock = (obj) => el("pre", { text: JSON.stringify(obj, null, 2) });
+
+function render() {
+  document.querySelectorAll("nav button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.view === state.view)
+  );
+  const main = $("#main");
+  main.innerHTML = "";
+  main.append(el("div", { class: "muted", text: "Loading…" }));
+  const fn = { world: renderWorld, approval: renderApproval, history: renderHistory }[state.view];
+  fn(main).catch((e) => {
+    main.innerHTML = "";
+    main.append(el("div", { class: "card err", text: `Error: ${e.message}` }));
+  });
+}
+
+// ---- World State -----------------------------------------------------------
+async function renderWorld(main) {
+  const entities = await api("/v1/world-state");
+  main.innerHTML = "";
+  if (!entities.length) {
+    main.append(el("div", { class: "empty", text: "No entities observed yet for this tenant." }));
+    return;
+  }
+  for (const e of entities) {
+    const effective = e.attributes.status ? e.attributes.status.value : "—";
+    const card = el("div", { class: "card" });
+    card.append(
+      el("div", { class: "row" },
+        el("h3", { text: `${e.entity_type}:${e.entity_id}` }),
+        badge(String(effective)),
+        el("span", { class: "muted", text: `v${e.state_version}` })
+      )
+    );
+    const sources = new Set();
+    Object.values(e.attributes).forEach((a) =>
+      (a.source_observation_ids || []).forEach((s) => sources.add(s))
+    );
+    card.append(el("div", { class: "kv" },
+      el("div", { text: "Source observations" }), el("div", { text: [...sources].join(", ") || "—" }),
+      el("div", { text: "Commit" }), el("div", {}, el("code", { text: e.commit_id || "—" })),
+    ));
+    const t = el("table", {},
+      el("tr", {}, el("th", { text: "Attribute" }), el("th", { text: "Value" }),
+        el("th", { text: "Confidence" }), el("th", { text: "Freshness" }), el("th", { text: "Observed at" }))
+    );
+    for (const [name, a] of Object.entries(e.attributes)) {
+      t.append(el("tr", {},
+        el("td", { text: name }),
+        el("td", {}, el("code", { text: JSON.stringify(a.value) })),
+        el("td", { text: a.confidence != null ? a.confidence.toFixed(2) : "—" }),
+        el("td", { text: a.freshness || "—" }),
+        el("td", { text: fmtTime(a.observed_at) }),
+      ));
+    }
+    card.append(t);
+    card.append(el("div", { class: "row", style: "margin-top:10px" },
+      el("button", {
+        class: "action ghost", text: "View history & proof",
+        onclick: () => { state.view = "history"; render(); },
+      })
+    ));
+    main.append(card);
+  }
+}
+
+// ---- Approval --------------------------------------------------------------
+async function renderApproval(main) {
+  const actions = await api("/v1/actions");
+  main.innerHTML = "";
+  const pending = actions.filter((a) => a.status === "approval_required");
+  const others = actions.filter((a) => a.status !== "approval_required");
+
+  if (!actions.length) {
+    main.append(el("div", { class: "empty", text: "No action proposals for this tenant yet." }));
+    return;
+  }
+
+  main.append(el("h3", { text: `Pending approval (${pending.length})` }));
+  for (const a of pending) main.append(await proposalCard(a, true));
+
+  if (others.length) {
+    main.append(el("h3", { text: "Other proposals", style: "margin-top:20px" }));
+    for (const a of others) main.append(await proposalCard(a, false));
+  }
+}
+
+async function proposalCard(decision, actionable) {
+  const detail = await api(`/v1/actions/${decision.action_id}`);
+  const proposal = await api(`/v1/actions/${decision.action_id}/proof`)
+    .then((p) => p.proposal)
+    .catch(() => null);
+  const card = el("div", { class: "card" });
+  card.append(el("div", { class: "row" },
+    el("h3", { text: decision.action_id }),
+    badge(decision.status),
+  ));
+  card.append(el("div", { class: "kv" },
+    el("div", { text: "Reason (policy)" }), el("div", { text: decision.reason }),
+    el("div", { text: "Matched rule" }), el("div", { text: decision.matched_rule || "—" }),
+    el("div", { text: "Policy version" }), el("div", { text: decision.policy_version }),
+    el("div", { text: "Required role" }), el("div", { text: decision.required_role || "—" }),
+  ));
+  if (proposal) {
+    card.append(el("div", { class: "kv" },
+      el("div", { text: "Action type" }), el("div", { text: proposal.action_type }),
+      el("div", { text: "Target" }), el("div", { text: proposal.target_entity }),
+      el("div", { text: "Rationale" }), el("div", { text: proposal.reason }),
+      el("div", { text: "Evidence" }), el("div", { text: (proposal.evidence_refs || []).join(", ") || "—" }),
+      el("div", { text: "Expected version" }), el("div", { text: proposal.expected_state_version }),
+    ));
+    card.append(el("div", { class: "muted", text: "Typed parameters" }));
+    card.append(jsonBlock(proposal.parameters));
+    card.append(el("div", { class: "muted", text: "Expected change (expected attributes)" }));
+    card.append(jsonBlock(proposal.expected_attributes));
+  }
+  card.append(eventTimeline(detail.events));
+
+  if (actionable) {
+    const controls = el("div", { class: "row", style: "margin-top:12px" });
+    controls.append(
+      el("button", {
+        class: "action", text: "Approve",
+        onclick: () => decide(decision.action_id, "approve"),
+      }),
+      el("button", {
+        class: "action danger", text: "Reject",
+        onclick: () => decide(decision.action_id, "reject"),
+      }),
+    );
+    card.append(controls);
+  }
+  return card;
+}
+
+async function decide(actionId, kind) {
+  const reason = prompt(`Reason for ${kind}:`, kind === "approve" ? "Confirmed" : "Not applicable");
+  if (reason == null) return;
+  try {
+    await api(`/v1/actions/${actionId}/${kind}`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+    render();
+  } catch (e) {
+    alert(`Failed to ${kind}: ${e.message}`);
+  }
+}
+
+function eventTimeline(events) {
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "muted", text: "Action event timeline" }));
+  if (!events || !events.length) {
+    wrap.append(el("div", { class: "muted", text: "No events." }));
+    return wrap;
+  }
+  const ul = el("ul", { class: "timeline" });
+  for (const ev of events) {
+    ul.append(el("li", {},
+      badge(ev.event_type),
+      el("span", { class: "muted", text: ` ${ev.actor_role} ` }),
+      el("code", { text: (ev.event_hash || "").slice(0, 18) + "…" }),
+    ));
+  }
+  wrap.append(ul);
+  return wrap;
+}
+
+// ---- History & Proof ------------------------------------------------------
+async function renderHistory(main) {
+  const [commits, actions] = await Promise.all([
+    api("/v1/diffs"),
+    api("/v1/actions"),
+  ]);
+  main.innerHTML = "";
+
+  const chain = el("div", { class: "card" });
+  chain.append(el("h3", { text: `Commit chain (${commits.length})` }));
+  if (!commits.length) {
+    chain.append(el("div", { class: "muted", text: "No commits yet." }));
+  }
+  for (const c of commits) {
+    const box = el("div", { style: "border-top:1px solid var(--border); padding-top:10px; margin-top:10px" });
+    box.append(el("div", { class: "row" },
+      el("code", { text: c.commit_id }),
+      badge(c.assurance_level),
+      el("span", { class: "muted", text: `${c.entity_type}:${c.entity_id} — ${c.cause}` }),
+    ));
+    box.append(el("div", { class: "kv" },
+      el("div", { text: "Parent" }), el("div", {}, el("code", { text: c.parent_commit_id || "—" })),
+      el("div", { text: "Hash" }), el("div", {}, el("code", { text: c.hash })),
+      el("div", { text: "Observations" }), el("div", { text: (c.observation_ids || []).join(", ") || "—" }),
+    ));
+    box.append(el("div", { class: "muted", text: "Semantic diff" }));
+    box.append(jsonBlock(c.semantic_diff));
+    chain.append(box);
+  }
+  main.append(chain);
+
+  main.append(el("h3", { text: "Action proofs" }));
+  if (!actions.length) {
+    main.append(el("div", { class: "empty", text: "No actions to prove yet." }));
+  }
+  for (const a of actions) main.append(await proofCard(a.action_id));
+}
+
+async function proofCard(actionId) {
+  const card = el("div", { class: "card" });
+  let proof;
+  try {
+    proof = await api(`/v1/actions/${actionId}/proof`);
+  } catch (e) {
+    card.append(el("div", { class: "err", text: `${actionId}: ${e.message}` }));
+    return card;
+  }
+  card.append(el("div", { class: "row" },
+    el("h3", { text: actionId }),
+    badge(proof.status),
+    el("span", { class: "badge " + (proof.assurance_level === "verified" ? "verified" : "verification_pending"), text: `assurance: ${proof.assurance_level}` }),
+  ));
+
+  if (proof.projection) {
+    card.append(el("div", { class: "muted", text: "Entity before / after" }));
+    const grid = el("div", { class: "row" });
+    grid.append(
+      el("div", { style: "flex:1;min-width:280px" }, el("div", { class: "muted", text: "before" }), jsonBlock(proof.projection.before)),
+      el("div", { style: "flex:1;min-width:280px" }, el("div", { class: "muted", text: "after" }), jsonBlock(proof.projection.after)),
+    );
+    card.append(grid);
+  }
+
+  if (proof.provider) {
+    card.append(el("div", { class: "kv" },
+      el("div", { text: "Provider" }), el("div", { text: proof.provider.provider }),
+      el("div", { text: "Provider request" }), el("div", {}, el("code", { text: proof.provider.provider_request_id })),
+      el("div", { text: "Request fingerprint" }), el("div", {}, el("code", { text: proof.provider.request_fingerprint })),
+      el("div", { text: "Idempotency key" }), el("div", {}, el("code", { text: proof.provider.idempotency_key })),
+    ));
+  }
+  if (proof.verification) {
+    card.append(el("div", { class: "kv" },
+      el("div", { text: "Verification result" }), el("div", {}, badge(proof.verification.result)),
+      el("div", { text: "Observed status" }), el("div", { text: proof.verification.observed_status || "—" }),
+      el("div", { text: "Attempts" }), el("div", { text: proof.verification.attempts }),
+      el("div", { text: "Verification commit" }), el("div", {}, el("code", { text: proof.verification.verification_commit_id || "—" })),
+    ));
+  }
+
+  card.append(eventTimeline(proof.events));
+
+  card.append(el("div", { class: "muted", text: "Hash chain" }));
+  const hc = el("table", {}, el("tr", {}, el("th", { text: "Event" }), el("th", { text: "Prev hash" }), el("th", { text: "Event hash" })));
+  for (const link of proof.hash_chain) {
+    hc.append(el("tr", {},
+      el("td", { text: link.event_type }),
+      el("td", {}, el("code", { text: (link.previous_event_hash || "∅").slice(0, 16) })),
+      el("td", {}, el("code", { text: link.event_hash.slice(0, 16) })),
+    ));
+  }
+  card.append(hc);
+
+  if (proof.warnings && proof.warnings.length) {
+    const ul = el("ul", { class: "warn-list" });
+    proof.warnings.forEach((w) => ul.append(el("li", { text: w })));
+    card.append(ul);
+  }
+
+  card.append(el("div", { class: "row", style: "margin-top:12px" },
+    el("button", {
+      class: "action ghost", text: "Download JSON proof bundle",
+      onclick: () => downloadJson(`proof-${actionId}.json`, proof),
+    })
+  ));
+  return card;
+}
+
+function downloadJson(name, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ---- wiring --------------------------------------------------------------
+$("#tenant").value = state.tenant;
+$("#role").value = state.role;
+$("#tenant").addEventListener("change", (e) => {
+  state.tenant = e.target.value.trim() || "demo";
+  localStorage.setItem("rl.tenant", state.tenant);
+  render();
+});
+$("#role").addEventListener("change", (e) => {
+  state.role = e.target.value;
+  localStorage.setItem("rl.role", state.role);
+  render();
+});
+$("#refresh").addEventListener("click", render);
+document.querySelectorAll("nav button").forEach((b) =>
+  b.addEventListener("click", () => { state.view = b.dataset.view; render(); })
+);
+render();
+</script>
+</body>
+</html>

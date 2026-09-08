@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -402,6 +403,18 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/v1/actions", response_model=list[ActionDecision])
+    def list_actions(
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[ActionDecision]:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                restore_actions(x_reality_tenant, session)
+            finally:
+                session.close()
+        return action_service.list_actions(x_reality_tenant)
+
     @app.get("/v1/actions/{action_id}", response_model=ActionStatusResponse)
     def action_status(
         action_id: str,
@@ -616,6 +629,12 @@ def create_app(
             return action_service.events(action_id, x_reality_tenant)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    dashboard_html = (Path(__file__).parent / "dashboard.html").read_text()
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard() -> str:
+        return dashboard_html
 
     return app
 

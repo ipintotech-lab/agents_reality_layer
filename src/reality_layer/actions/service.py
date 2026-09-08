@@ -230,6 +230,14 @@ class ActionService:
         self._check_tenant(action, tenant_id)
         return action.decision
 
+    def list_actions(self, tenant_id: str = "demo") -> list[ActionDecision]:
+        """Return the current decision for every action owned by ``tenant_id``."""
+        return [
+            action.decision
+            for action in self._actions.values()
+            if action.tenant_id == tenant_id
+        ]
+
     #: Verification outcomes that end the polling loop.
     TERMINAL_VERIFICATION_STATUSES = frozenset(
         {
