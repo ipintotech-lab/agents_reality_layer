@@ -242,20 +242,30 @@ def rehearse(
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="Write the proof JSON to this file.")
     ] = None,
+    summary: bool = typer.Option(
+        False, "--summary", help="Emit an operator-facing run summary instead of full proofs."
+    ),
 ) -> None:
     """Run isolated complete MVP loops with the deterministic local Shopify adapter."""
     import json
+    import time
 
-    from reality_layer.rehearsal import run_local_rehearsals
+    from reality_layer.rehearsal import rehearsal_summary, run_local_rehearsals
 
     try:
+        started = time.perf_counter()
         proofs = run_local_rehearsals(tenant, order, runs)
+        elapsed_seconds = time.perf_counter() - started
     except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    payload = proofs[0].model_dump(mode="json") if runs == 1 else [
-        proof.model_dump(mode="json") for proof in proofs
-    ]
+    payload = (
+        rehearsal_summary(proofs, elapsed_seconds)
+        if summary
+        else proofs[0].model_dump(mode="json")
+        if runs == 1
+        else [proof.model_dump(mode="json") for proof in proofs]
+    )
     rendered = json.dumps(payload, indent=2, sort_keys=True)
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)

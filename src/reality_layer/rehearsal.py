@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from reality_layer.actions.models import (
     ActionProposal,
@@ -14,6 +15,20 @@ from reality_layer.reality_git import validate_commit_chain, validate_event_chai
 from reality_layer.worker.verifier import VerifierWorker
 from reality_layer.world_state.models import Observation
 from reality_layer.world_state.service import WorldStateService
+
+
+def rehearsal_summary(proofs: list[ProofBundle], elapsed_seconds: float) -> dict[str, Any]:
+    """Return a stable operator-facing summary for a rehearsal batch."""
+    verified_runs = sum(proof.status is ActionStatus.verified for proof in proofs)
+    return {
+        "total_runs": len(proofs),
+        "verified_runs": verified_runs,
+        "failed_runs": len(proofs) - verified_runs,
+        "all_verified": bool(proofs) and verified_runs == len(proofs),
+        "elapsed_seconds": round(max(0.0, elapsed_seconds), 3),
+        "action_ids": [proof.action_id for proof in proofs],
+        "verification_commit_ids": [proof.verification_commit_id for proof in proofs],
+    }
 
 
 def run_local_rehearsal(
