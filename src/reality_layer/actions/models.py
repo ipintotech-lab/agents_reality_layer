@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ActionType(StrEnum):
@@ -45,6 +45,32 @@ class ActionProposal(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=255)
     expected_state_version: int = Field(ge=1)
     expected_attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def reject_sensitive_parameters(self) -> "ActionProposal":
+        sensitive_names = {
+            "access_token",
+            "api_key",
+            "authorization",
+            "password",
+            "secret",
+            "token",
+        }
+
+        def contains_sensitive_key(value: Any) -> bool:
+            if isinstance(value, dict):
+                return any(
+                    str(key).lower() in sensitive_names
+                    or contains_sensitive_key(nested)
+                    for key, nested in value.items()
+                )
+            if isinstance(value, list):
+                return any(contains_sensitive_key(item) for item in value)
+            return False
+
+        if contains_sensitive_key(self.parameters):
+            raise ValueError("Action parameters cannot contain credential-like fields.")
+        return self
 
 
 class ActionDecision(BaseModel):

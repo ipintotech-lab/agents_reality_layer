@@ -1,8 +1,10 @@
 import json
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
+from reality_layer.actions.models import ActionProposal
 from reality_layer.api.app import create_app
 
 
@@ -281,6 +283,13 @@ def test_action_events_are_tenant_scoped() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_action_proposal_rejects_credential_like_parameter_fields() -> None:
+    payload = proposal()
+    payload["parameters"] = {"provider": {"access_token": "should-not-be-accepted"}}
+    with pytest.raises(ValueError, match="credential-like fields"):
+        ActionProposal(**payload)
 
 
 def test_unknown_action_returns_not_found() -> None:
