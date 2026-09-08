@@ -6,6 +6,10 @@
 
 ### Implementation status
 
+All nine build-plan phases (§15) are functionally complete against the local
+fallback path; the remaining work is live-service validation and deployment
+infrastructure that needs real credentials (see §15 for the exact list).
+
 The repository currently contains a working MVP prototype for:
 
 - tenant-scoped observations and World State projections;
@@ -26,7 +30,9 @@ The repository currently contains a working MVP prototype for:
   endpoints, role-gated to operations/admin/system;
 - rehearsal fault injection (`reality rehearse --fault provider_error |
   verification_divergence`) with per-step latency capture, proving the loop
-  reaches a protective terminal status instead of a false `verified`.
+  reaches a protective terminal status instead of a false `verified`;
+- repeatable local rehearsal tooling (`reality rehearse --runs N --summary`) with
+  isolated per-run state and no manual database repair between runs.
 
 The following are partial or planned rather than complete MVP capabilities:
 
@@ -34,8 +40,10 @@ The following are partial or planned rather than complete MVP capabilities:
 - field-level permission filtering and ABAC;
 - durable HITL expiry, delegation, supersession, and scoped approvals;
 - agent SDK and dashboard permission filtering / provenance drill-down;
-- complete workspace and connector persistence;
-- live Shopify/EasyPost behavior validation;
+- complete connector persistence and health-state surfacing;
+- a network-addressable MCP server (the adapter is currently in-process only);
+- live Shopify/EasyPost behavior validation and a live dress rehearsal;
+- Railway deployment with a persistent PostgreSQL volume;
 - signed attestations or external notarization.
 
 The product contract requires each new workspace to start in `observe_only` mode. With
@@ -650,6 +658,12 @@ Structured logs must include tenant ID, correlation ID, action ID, commit ID, co
 
 ## 14. Acceptance criteria
 
+Status (2026-09-08): every criterion below except live connector authentication
+(14.1, first item) and the live dress rehearsal is exercised by the automated
+suite and the local `reality rehearse` / `reality demo` paths. The checkboxes are
+kept unchecked until each is confirmed once more against live Shopify/EasyPost
+test environments during demo preflight.
+
 ### 14.1 Connectors and World State
 
 - [ ] Shopify and EasyPost authenticate in isolated test environments.
@@ -698,17 +712,32 @@ Structured logs must include tenant ID, correlation ID, action ID, commit ID, co
 
 ## 15. Build plan
 
-| Phase | Deliverables | Exit condition |
-|---|---|---|
-| 0 — Foundation | Repository structure, local environment, tenant scoping, schema, object storage, CI | Tenant-isolation tests pass and append-only tables exist |
-| 1 — Observe | Shopify/EasyPost connectors, bounded backfill, immutable observations, raw payload references | Two sources produce traceable observations |
-| 2 — Compile | Canonical schema, mappings, deterministic resolution, scoring, projection | Demo order/shipment are queryable with confidence and freshness |
-| 3 — History | Commit creation, semantic diff, hash chain, History screen | World State changes are traceable to observations |
-| 4 — Govern | Typed proposals, RBAC policies, thresholds, denial path, Approval screen | Agent intent is separated from authorized execution |
-| 5 — Act | Shopify test cancellation, preconditions, semantic idempotency, append-only action events | Approved action executes at most once |
-| 6 — Verify | Polling read-after-write, verification observation, proof bundle, assurance level | Full loop ends in `verified` |
-| 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts |
-| 8 — Rehearse | Seed/reset tooling, runbook, latency tests, failure injection, fallback recording | Five consecutive three-to-four-minute rehearsals succeed |
+| Phase | Deliverables | Exit condition | Status |
+|---|---|---|---|
+| 0 — Foundation | Repository structure, local environment, tenant scoping, schema, object storage, CI | Tenant-isolation tests pass and append-only tables exist | Complete |
+| 1 — Observe | Shopify/EasyPost connectors, bounded backfill, immutable observations, raw payload references | Two sources produce traceable observations | Complete (recorded fixtures; live behavior unvalidated) |
+| 2 — Compile | Canonical schema, mappings, deterministic resolution, scoring, projection | Demo order/shipment are queryable with confidence and freshness | Complete |
+| 3 — History | Commit creation, semantic diff, hash chain, History screen | World State changes are traceable to observations | Complete |
+| 4 — Govern | Typed proposals, RBAC policies, thresholds, denial path, Approval screen | Agent intent is separated from authorized execution | Complete |
+| 5 — Act | Shopify test cancellation, preconditions, semantic idempotency, append-only action events | Approved action executes at most once | Complete (deterministic test adapter) |
+| 6 — Verify | Polling read-after-write, verification observation, proof bundle, assurance level | Full loop ends in `verified` | Complete |
+| 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts | Complete (`RealityMcpAdapter` is an in-process facade, not a network MCP server) |
+| 8 — Rehearse | Seed/reset tooling, runbook, latency tests, failure injection, fallback recording | Five consecutive three-to-four-minute rehearsals succeed | Complete against the local fallback path; live-service dress rehearsal pending credentials |
+
+Local fallback status (2026-09-08): five consecutive `reality rehearse --runs 5`
+batches each reached `assurance_level=verified` for every loop; the deterministic
+loop runs in single-digit milliseconds, far inside the three-to-four-minute demo
+budget. `reality rehearse --fault provider_error` and `--fault
+verification_divergence` confirm the loop stops at a protective terminal status
+(`approved` with no proof, and `state_diverged`) rather than a false `verified`.
+
+Outstanding before a live investor demo, all requiring real credentials or
+infrastructure not in this repository:
+
+- live Shopify/EasyPost authentication, scope, and behavior validation
+  (`reality preflight`), and a full dress rehearsal against a real test order;
+- a network-addressable MCP server exposing the adapter tools;
+- a Railway deployment with a persistent volume for PostgreSQL.
 
 ---
 
