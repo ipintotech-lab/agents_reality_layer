@@ -25,21 +25,51 @@ class RealityMcpAdapter:
         return response.json()
 
     def get_world_state(
-        self, tenant_id: str, entity_type: str | None = None
+        self,
+        tenant_id: str,
+        entity_type: str | None = None,
+        state: str | None = None,
+        freshness: str | None = None,
+        min_confidence: float | None = None,
     ) -> list[dict[str, Any]]:
+        params = {
+            key: value
+            for key, value in {
+                "entity_type": entity_type,
+                "state": state,
+                "freshness": freshness,
+                "min_confidence": min_confidence,
+            }.items()
+            if value is not None
+        }
         response = self._client.get(
             "/v1/world-state",
-            params={"entity_type": entity_type} if entity_type else None,
+            params=params or None,
             headers=self._headers(tenant_id),
         )
         return cast(list[dict[str, Any]], self._result(response))
 
     def query_entities(
-        self, tenant_id: str, entity_type: str | None = None
+        self,
+        tenant_id: str,
+        entity_type: str | None = None,
+        state: str | None = None,
+        freshness: str | None = None,
+        min_confidence: float | None = None,
     ) -> list[dict[str, Any]]:
+        params = {
+            key: value
+            for key, value in {
+                "entity_type": entity_type,
+                "state": state,
+                "freshness": freshness,
+                "min_confidence": min_confidence,
+            }.items()
+            if value is not None
+        }
         response = self._client.get(
             "/v1/entities",
-            params={"entity_type": entity_type} if entity_type else None,
+            params=params or None,
             headers=self._headers(tenant_id),
         )
         return cast(list[dict[str, Any]], self._result(response))

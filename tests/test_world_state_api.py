@@ -69,3 +69,41 @@ def test_generic_entity_query_rejects_unknown_entity_type() -> None:
     response = client.get("/v1/entities/customer/customer-1")
 
     assert response.status_code == 404
+
+
+def test_world_state_queries_filter_by_state_freshness_and_confidence() -> None:
+    client = TestClient(create_app())
+    client.post(
+        "/v1/observations",
+        json=_observation("obs_order_open", "order", "order-open"),
+        headers={"X-Reality-Tenant": "tenant-filters"},
+    )
+    stale = _observation("obs_order_stale", "order", "order-stale")
+    stale["observed_at"] = "2020-01-01T00:00:00+00:00"
+    stale["payload"]["status"] = "paid"
+    client.post(
+        "/v1/observations",
+        json=stale,
+        headers={"X-Reality-Tenant": "tenant-filters"},
+    )
+
+    by_state = client.get(
+        "/v1/entities",
+        params={"state": "paid"},
+        headers={"X-Reality-Tenant": "tenant-filters"},
+    )
+    assert [item["entity_id"] for item in by_state.json()] == ["order:order-stale"]
+
+    by_freshness = client.get(
+        "/v1/entities",
+        params={"freshness": "stale"},
+        headers={"X-Reality-Tenant": "tenant-filters"},
+    )
+    assert [item["entity_id"] for item in by_freshness.json()] == ["order:order-stale"]
+
+    by_confidence = client.get(
+        "/v1/entities",
+        params={"min_confidence": 0.99},
+        headers={"X-Reality-Tenant": "tenant-filters"},
+    )
+    assert by_confidence.json() == []

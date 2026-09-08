@@ -121,15 +121,45 @@ class WorldStateService:
             raise KeyError(f"Unknown {entity_type}: {entity_id}") from exc
 
     def list_entities(
-        self, tenant_id: str, entity_type: str | None = None
+        self,
+        tenant_id: str,
+        entity_type: str | None = None,
+        state: str | None = None,
+        freshness: str | None = None,
+        min_confidence: float | None = None,
     ) -> list[OrderState]:
         states = [
-            state
-            for (state_tenant, state_type, _), state in self._states.items()
+            state_record
+            for (state_tenant, state_type, _), state_record in self._states.items()
             if state_tenant == tenant_id
             and (entity_type is None or state_type == entity_type.lower())
+            and self._matches_filters(
+                state_record, state, freshness, min_confidence
+            )
         ]
         return sorted(states, key=lambda state: state.entity_id)
+
+    @staticmethod
+    def _matches_filters(
+        entity: OrderState,
+        state_filter: str | None,
+        freshness_filter: str | None,
+        min_confidence: float | None,
+    ) -> bool:
+        attributes = entity.attributes.values()
+        if state_filter is not None and not any(
+            str(attribute.value) == state_filter for attribute in attributes
+        ):
+            return False
+        if freshness_filter is not None and not any(
+            attribute.freshness == freshness_filter for attribute in attributes
+        ):
+            return False
+        if min_confidence is not None and not any(
+            attribute.confidence >= min_confidence for attribute in attributes
+        ):
+            return False
+        return True
 
     def get_commit(self, tenant_id: str, commit_id: str) -> CommitRecord:
         try:
@@ -149,7 +179,7 @@ class WorldStateService:
 
         commits: list[CommitRecord] = []
         seen: set[str] = set()
-        current_commit_id = latest_commit_id
+        current_commit_id: str | None = latest_commit_id
         while current_commit_id is not None and current_commit_id not in seen:
             commit = self._commits.get((tenant_id, current_commit_id))
             if commit is None:
@@ -166,8 +196,10 @@ class WorldStateService:
             raise KeyError(f"Unknown commit: {since_commit_id}")
         return commits
 
-    def _is_ancestor(self, tenant_id: str, candidate_commit_id: str, descendant_commit_id: str) -> bool:
-        current_commit_id = descendant_commit_id
+    def _is_ancestor(
+        self, tenant_id: str, candidate_commit_id: str, descendant_commit_id: str
+    ) -> bool:
+        current_commit_id: str | None = descendant_commit_id
         seen: set[str] = set()
         while current_commit_id is not None and current_commit_id not in seen:
             if current_commit_id == candidate_commit_id:

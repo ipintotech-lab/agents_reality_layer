@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from reality_layer.db.models import CommitLog, StateProjection
 from reality_layer.db.repositories import CommitRepository, StateProjectionRepository
 from reality_layer.world_state.models import CommitRecord, OrderState, StateAttribute
+from reality_layer.world_state.service import WorldStateService
 
 
 class CompilerPersistenceService:
@@ -76,10 +77,15 @@ class CompilerPersistenceService:
         )
 
     def list_states(
-        self, tenant_id: str, entity_type: str | None = None
+        self,
+        tenant_id: str,
+        entity_type: str | None = None,
+        state: str | None = None,
+        freshness: str | None = None,
+        min_confidence: float | None = None,
     ) -> list[OrderState]:
         rows = self.projections.list_for_tenant(tenant_id, entity_type)
-        return [
+        states = [
             OrderState(
                 tenant_id=tenant_id,
                 entity_id=row.entity_id,
@@ -92,6 +98,13 @@ class CompilerPersistenceService:
                 commit_id=row.producing_commit_id or "",
             )
             for row in rows
+        ]
+        return [
+            state_record
+            for state_record in states
+            if WorldStateService._matches_filters(
+                state_record, state, freshness, min_confidence
+            )
         ]
 
     def load_commit(self, tenant_id: str, commit_id: str) -> CommitRecord | None:
