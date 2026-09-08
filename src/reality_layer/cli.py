@@ -15,7 +15,6 @@ from reality_layer.connectors.observe import Normalizer, observe_payload
 from reality_layer.connectors.onboarding import check_connectors
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.db.models import ConnectorKind
-from reality_layer.db.session import SessionLocal
 from reality_layer.storage import LocalObjectStore
 from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
@@ -66,6 +65,8 @@ def init(
             err=True,
         )
         raise typer.Exit(code=2)
+    from reality_layer.db.session import SessionLocal
+
     session = SessionLocal()
     try:
         created = WorkspaceService(session).initialize(tenant, workspace)
@@ -105,6 +106,8 @@ def connect(
         if result["error"]:
             typer.echo(f"  error: {result['error']}", err=True)
     if settings.persistence_enabled:
+        from reality_layer.db.session import SessionLocal
+
         session = SessionLocal()
         try:
             WorkspaceService(session).record_connector_checks(tenant, results)
@@ -131,6 +134,9 @@ def observe(
     store = LocalObjectStore(Path(settings.object_storage_root))
     session = None
     try:
+        if persist:
+            from reality_layer.db.session import SessionLocal
+
         session = SessionLocal() if persist else None
         if session is not None and not WorkspaceService(session).has_capability(
             tenant, ConnectorKind(connector), "read"
@@ -224,6 +230,24 @@ def verify(
             typer.echo(f"{decision.action_id}: {decision.status} — {decision.reason}")
         return
     worker.run_forever()
+
+
+@app.command()
+def rehearse(
+    tenant: str = typer.Option("demo", help="Tenant identifier for the local rehearsal."),
+    order: str = typer.Option("rehearsal-order", help="Order identifier for the local rehearsal."),
+) -> None:
+    """Run the complete MVP loop with the deterministic local Shopify adapter."""
+    import json
+
+    from reality_layer.rehearsal import run_local_rehearsal
+
+    try:
+        proof = run_local_rehearsal(tenant, order)
+    except (RuntimeError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(proof.model_dump(mode="json"), indent=2, sort_keys=True))
 
 
 @app.command()

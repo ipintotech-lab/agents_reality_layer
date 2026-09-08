@@ -39,6 +39,13 @@ python -m pip install -e ".[dev]"
 pytest
 ```
 
+Run the credential-free end-to-end rehearsal against the deterministic local Shopify
+adapter:
+
+```bash
+reality rehearse
+```
+
 PostgreSQL persistence coverage is opt-in and expects a disposable database:
 
 ```bash
