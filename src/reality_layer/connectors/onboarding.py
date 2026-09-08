@@ -81,3 +81,29 @@ def preflight_connectors(settings: Settings) -> dict[str, object]:
         "failures": failures,
         "connectors": results,
     }
+
+
+def validate_demo_order(payload: dict[str, object], order_id: str) -> dict[str, object]:
+    """Validate that a live Shopify order is safe for the demo cancellation."""
+    actual_id = payload.get("id")
+    status = payload.get("financial_status") or payload.get("status")
+    fulfillment_status = payload.get("fulfillment_status")
+    failures: list[str] = []
+    if str(actual_id) != order_id:
+        failures.append("order.id_mismatch")
+    if not isinstance(status, str) or status.lower() in {
+        "cancelled",
+        "canceled",
+        "closed",
+        "voided",
+    }:
+        failures.append("order.not_open")
+    if isinstance(fulfillment_status, str) and fulfillment_status.lower() == "fulfilled":
+        failures.append("order.fulfilled")
+    return {
+        "eligible": not failures,
+        "order_id": order_id,
+        "status": status,
+        "fulfillment_status": fulfillment_status,
+        "failures": failures,
+    }

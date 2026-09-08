@@ -55,6 +55,12 @@ REALITY_PERSISTENCE_ENABLED=true reality preflight --tenant demo
 
 The preflight must report `"ready": true`. It requires Shopify authentication,
 read, and write capabilities plus EasyPost authentication and read capability.
+When a target order has been selected, include `--order-id <shopify-order-id>` to
+validate that exact order is open and unfulfilled:
+
+```bash
+REALITY_PERSISTENCE_ENABLED=true reality preflight --tenant demo --order-id 123
+```
 
 Confirm that Shopify read and write capabilities are enabled and that EasyPost read
 access succeeds. Stop the demo if either connector is unauthenticated or the

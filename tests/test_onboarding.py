@@ -3,6 +3,7 @@ from reality_layer.connectors.onboarding import (
     check_connector,
     check_connectors,
     preflight_connectors,
+    validate_demo_order,
 )
 
 
@@ -80,3 +81,22 @@ def test_preflight_requires_shopify_write_and_easypost_read(monkeypatch) -> None
     assert result["ready"] is False
     assert "shopify.authenticated" in result["failures"]
     assert "easypost.authenticated" in result["failures"]
+
+
+def test_demo_order_validation_rejects_fulfilled_order() -> None:
+    result = validate_demo_order(
+        {"id": "order-1", "financial_status": "paid", "fulfillment_status": "fulfilled"},
+        "order-1",
+    )
+
+    assert result["eligible"] is False
+    assert result["failures"] == ["order.fulfilled"]
+
+
+def test_demo_order_validation_accepts_open_unfulfilled_order() -> None:
+    result = validate_demo_order(
+        {"id": "order-1", "financial_status": "paid", "fulfillment_status": None},
+        "order-1",
+    )
+
+    assert result["eligible"] is True
