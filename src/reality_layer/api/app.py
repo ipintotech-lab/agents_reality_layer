@@ -11,6 +11,7 @@ from reality_layer.actions.models import (
     ActionDecision,
     ActionEventRecord,
     ActionProposal,
+    ActionStatusResponse,
     ApprovalRequest,
     ExecutionReceipt,
     ProofBundle,
@@ -194,6 +195,24 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/v1/diffs", response_model=list[CommitRecord])
+    def list_diffs(
+        since_commit: str | None = None,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[CommitRecord]:
+        try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    return CompilerPersistenceService(session).list_commits(
+                        x_reality_tenant, since_commit
+                    )
+                finally:
+                    session.close()
+            return world_state_service.list_commits(x_reality_tenant, since_commit)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     def order_value_for(tenant_id: str, target_entity: str) -> float | None:
         order_id = target_entity.removeprefix("order:")
         try:
@@ -255,6 +274,24 @@ def create_app(
                 session.close()
                 return decision
             return approve_action_impl(action_id, approval, x_reality_role, x_reality_tenant)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/v1/actions/{action_id}", response_model=ActionStatusResponse)
+    def action_status(
+        action_id: str,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> ActionStatusResponse:
+        try:
+            if app_settings.persistence_enabled:
+                session = make_session()
+                try:
+                    restore_actions(x_reality_tenant, session)
+                finally:
+                    session.close()
+            events = action_service.events(action_id, x_reality_tenant)
+            decision = action_service.get_decision(action_id, x_reality_tenant)
+            return ActionStatusResponse(decision=decision, events=events)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

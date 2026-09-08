@@ -73,6 +73,10 @@ class CommitRepository:
             tenant_get_by_id(CommitLog, tenant_id, "commit_id", commit_id)
         ).first()
 
+    def list_for_tenant(self, tenant_id: str) -> Sequence[CommitLog]:
+        statement = tenant_select(CommitLog, tenant_id).order_by(CommitLog.created_at.asc())
+        return self.session.scalars(statement).all()
+
     def latest(self, tenant_id: str) -> CommitLog | None:
         statement = (
             tenant_select(CommitLog, tenant_id)

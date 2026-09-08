@@ -225,6 +225,11 @@ class ActionService:
         self._check_tenant(action, tenant_id)
         return action.proposal
 
+    def get_decision(self, action_id: str, tenant_id: str = "demo") -> ActionDecision:
+        action = self._get(action_id)
+        self._check_tenant(action, tenant_id)
+        return action.decision
+
     #: Verification outcomes that end the polling loop.
     TERMINAL_VERIFICATION_STATUSES = frozenset(
         {
