@@ -239,6 +239,9 @@ def rehearse(
     runs: int = typer.Option(
         1, min=1, max=100, help="Number of isolated rehearsals to execute."
     ),
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Write the proof JSON to this file.")
+    ] = None,
 ) -> None:
     """Run isolated complete MVP loops with the deterministic local Shopify adapter."""
     import json
@@ -253,7 +256,13 @@ def rehearse(
     payload = proofs[0].model_dump(mode="json") if runs == 1 else [
         proof.model_dump(mode="json") for proof in proofs
     ]
-    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    rendered = json.dumps(payload, indent=2, sort_keys=True)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(f"{rendered}\n", encoding="utf-8")
+        typer.echo(f"Wrote rehearsal proof to {output}")
+    else:
+        typer.echo(rendered)
 
 
 @app.command()
