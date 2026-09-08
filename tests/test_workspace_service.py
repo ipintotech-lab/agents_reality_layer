@@ -125,3 +125,14 @@ def test_capability_requires_persisted_successful_connector_check() -> None:
 
     assert service.has_capability("tenant-a", ConnectorKind.shopify, "read")
     assert not service.has_capability("tenant-a", ConnectorKind.shopify, "write")
+
+
+def test_connector_statuses_expose_sanitized_health_state() -> None:
+    session = FakeSession()
+    service = WorkspaceService(session)
+    service.initialize("tenant-a", "workspace-a")
+    statuses = service.connector_statuses("tenant-a")
+
+    assert statuses[0].kind == "shopify"
+    assert statuses[0].capabilities == {"read": False, "write": False}
+    assert statuses[0].last_check == {}

@@ -9,3 +9,4 @@ def test_action_status_and_diff_endpoints_are_registered() -> None:
     assert client.get("/v1/actions/missing").status_code == 404
     assert client.get("/v1/diffs").status_code == 200
     assert client.get("/v1/diffs").json() == []
+    assert client.get("/v1/connectors").json() == []

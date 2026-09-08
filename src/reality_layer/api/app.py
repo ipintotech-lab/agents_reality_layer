@@ -82,6 +82,27 @@ def create_app(
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    @app.get("/v1/connectors")
+    def connector_status(
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[dict[str, object]]:
+        if not app_settings.persistence_enabled:
+            return []
+        session = make_session()
+        try:
+            return [
+                {
+                    "connector_id": status.connector_id,
+                    "kind": status.kind,
+                    "display_name": status.display_name,
+                    "capabilities": status.capabilities,
+                    "last_check": status.last_check,
+                }
+                for status in WorkspaceService(session).connector_statuses(x_reality_tenant)
+            ]
+        finally:
+            session.close()
+
     @app.post("/v1/observations", response_model=OrderState, status_code=201)
     def ingest_observation(
         observation: Observation,
