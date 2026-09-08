@@ -30,6 +30,23 @@ Capture a static proof bundle when needed:
 reality rehearse --output artifacts/rehearsal-proof.json
 ```
 
+The `--summary` output includes `elapsed_seconds`; five runs should complete well
+inside the three-to-four-minute demo window.
+
+### Failure injection
+
+Prove the loop fails safe rather than claiming an unverified write:
+
+```bash
+reality rehearse --runs 3 --fault provider_error           # provider rejects the write
+reality rehearse --runs 3 --fault verification_divergence  # source still reports the order open
+```
+
+Each fault run emits a scenario summary with `all_protected`, per-run
+`terminal_statuses`, and `slowest_step_ms` latency. The command exits non-zero
+unless every run reaches its protective terminal status (`approved` with no proof
+for `provider_error`; `state_diverged` for `verification_divergence`).
+
 ## 1a. Scripted agent walkthrough
 
 Run the scripted agent demo, which drives the happy path, the policy-control

@@ -23,7 +23,10 @@ The repository currently contains a working MVP prototype for:
   proposal-only paths through the public MCP and REST contracts;
 - durable workspace mode transitions (`observe_only` <-> `demo_proposal`) via the
   `reality workspace` CLI and the `GET /v1/workspace` / `POST /v1/workspace/mode`
-  endpoints, role-gated to operations/admin/system.
+  endpoints, role-gated to operations/admin/system;
+- rehearsal fault injection (`reality rehearse --fault provider_error |
+  verification_divergence`) with per-step latency capture, proving the loop
+  reaches a protective terminal status instead of a false `verified`.
 
 The following are partial or planned rather than complete MVP capabilities:
 

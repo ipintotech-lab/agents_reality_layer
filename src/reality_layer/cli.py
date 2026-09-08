@@ -363,12 +363,44 @@ def rehearse(
     summary: bool = typer.Option(
         False, "--summary", help="Emit an operator-facing run summary instead of full proofs."
     ),
+    fault: str = typer.Option(
+        "none",
+        "--fault",
+        help="Inject a failure: none, provider_error, or verification_divergence.",
+    ),
 ) -> None:
     """Run isolated complete MVP loops with the deterministic local Shopify adapter."""
     import json
     import time
 
-    from reality_layer.rehearsal import rehearsal_summary, run_local_rehearsals
+    from reality_layer.rehearsal import (
+        RehearsalFault,
+        rehearsal_scenario_summary,
+        rehearsal_summary,
+        run_local_rehearsals,
+        run_rehearsals,
+    )
+
+    try:
+        injected = RehearsalFault(fault)
+    except ValueError as exc:
+        typer.echo(f"Unknown fault: {fault!r}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    if injected is not RehearsalFault.none:
+        try:
+            started = time.perf_counter()
+            results = run_rehearsals(tenant, order, runs, fault=injected)
+            elapsed_seconds = time.perf_counter() - started
+        except (RuntimeError, ValueError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        scenario = rehearsal_scenario_summary(results, elapsed_seconds)
+        typer.echo(json.dumps(scenario, indent=2, sort_keys=True))
+        if not scenario["all_protected"]:
+            typer.echo("Rehearsal did not fail safe for every run.", err=True)
+            raise typer.Exit(code=1)
+        return
 
     try:
         started = time.perf_counter()
@@ -377,6 +409,7 @@ def rehearse(
     except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
     payload = (
         rehearsal_summary(proofs, elapsed_seconds)
         if summary
