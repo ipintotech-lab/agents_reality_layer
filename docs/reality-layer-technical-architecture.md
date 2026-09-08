@@ -31,11 +31,25 @@ foundation model.
 
 *HITL — Human in the loop.*
 
+### Implementation status
+
+This document describes the target architecture. The current repository implements the
+core MVP control loop, but not every capability described below. Implemented areas include
+observations, World State projections with provenance/confidence/freshness, typed actions,
+policy evaluation, approval and precondition checks, idempotent test-adapter execution,
+independent verification, hash-linked commits and action events, proof bundles, bounded
+verification polling, and optional PostgreSQL persistence.
+
+Conflict resolution, field-level redaction, ABAC, durable approval expiry and delegation,
+MCP/SDK interfaces, complete workspace initialization, signed attestations, and dashboard
+surfaces remain planned or partial. Treat architecture tables and examples as target
+contracts unless a capability is listed as implemented in the MVP documentation.
+
 ## 2. Product Principles
 
 | Principle | Architectural consequence |
 | --- | --- |
-| Observe before acting | Every new workspace starts in Observe-only mode. |
+| Observe before acting | The product contract requires every new workspace to start in Observe-only mode; the current demo runtime uses an explicit `demo_proposal` exception until durable workspace initialization is complete. |
 | Facts are claims, not bare values | State carries provenance, freshness, confidence, and conflict status. |
 | Intent is not execution | Agents propose actions; the Reality Layer authorizes, executes, and verifies them. |
 | Auditability is a product feature | State transitions, decisions, overrides, failures, and proofs are versioned. |
