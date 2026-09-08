@@ -119,3 +119,41 @@ def test_commit_reads_are_tenant_scoped() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_hydrating_old_state_does_not_reset_latest_commit_cursor() -> None:
+    from reality_layer.world_state import Observation, WorldStateService
+
+    service = WorldStateService()
+    first = service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_old",
+            connector="shopify",
+            object_type="order",
+            object_id="shopify-123",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shopify-123", "status": "open"},
+        ),
+    )
+    second = service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_new",
+            connector="shopify",
+            object_type="order",
+            object_id="shopify-123",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shopify-123", "status": "paid"},
+        ),
+    )
+
+    first_commit = service.get_commit_for_state("tenant_a", first)
+    second_commit = service.get_commit_for_state("tenant_a", second)
+
+    service.hydrate(first, first_commit.commit_id, first_commit.hash)
+
+    assert [commit.commit_id for commit in service.list_commits("tenant_a")] == [
+        first_commit.commit_id,
+        second_commit.commit_id,
+    ]

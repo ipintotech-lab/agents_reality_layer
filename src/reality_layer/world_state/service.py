@@ -87,7 +87,15 @@ class WorldStateService:
     ) -> None:
         key = (state.tenant_id, state.entity_type.lower(), state.entity_id.split(":", 1)[-1])
         self._states[key] = state
-        self._latest_commit[state.tenant_id] = parent_commit_id or state.commit_id
+
+        current_latest = self._latest_commit.get(state.tenant_id)
+        if current_latest is None:
+            self._latest_commit[state.tenant_id] = parent_commit_id or state.commit_id
+        elif self._is_ancestor(state.tenant_id, state.commit_id, current_latest):
+            self._latest_commit[state.tenant_id] = current_latest
+        else:
+            self._latest_commit[state.tenant_id] = parent_commit_id or state.commit_id
+
         if parent_commit_id and parent_hash:
             self._commits[(state.tenant_id, parent_commit_id)] = CommitRecord(
                 commit_id=parent_commit_id,
@@ -157,6 +165,19 @@ class WorldStateService:
                     return commits[index + 1 :]
             raise KeyError(f"Unknown commit: {since_commit_id}")
         return commits
+
+    def _is_ancestor(self, tenant_id: str, candidate_commit_id: str, descendant_commit_id: str) -> bool:
+        current_commit_id = descendant_commit_id
+        seen: set[str] = set()
+        while current_commit_id is not None and current_commit_id not in seen:
+            if current_commit_id == candidate_commit_id:
+                return True
+            seen.add(current_commit_id)
+            current_commit = self._commits.get((tenant_id, current_commit_id))
+            if current_commit is None:
+                break
+            current_commit_id = current_commit.parent_commit_id
+        return False
 
     def _latest_hash(self, tenant_id: str) -> str | None:
         commit_id = self._latest_commit.get(tenant_id)
