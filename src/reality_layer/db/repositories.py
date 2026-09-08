@@ -39,6 +39,14 @@ class StateProjectionRepository:
             tenant_get_by_id(StateProjection, tenant_id, "entity_id", entity_id)
         ).first()
 
+    def list_for_tenant(
+        self, tenant_id: str, entity_type: str | None = None
+    ) -> Sequence[StateProjection]:
+        statement = tenant_select(StateProjection, tenant_id)
+        if entity_type is not None:
+            statement = statement.where(StateProjection.entity_type == entity_type)
+        return self.session.scalars(statement.order_by(StateProjection.entity_id.asc())).all()
+
     def save(self, projection: StateProjection) -> StateProjection:
         existing = self.get(projection.tenant_id, projection.entity_id)
         if existing is not None:
