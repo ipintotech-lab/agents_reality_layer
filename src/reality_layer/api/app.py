@@ -22,6 +22,7 @@ from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.storage import LocalObjectStore
+from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
     CommitRecord,
     CompilerPersistenceService,
@@ -233,14 +234,26 @@ def create_app(
         x_reality_role: str = Header(default="observer"),
         x_reality_tenant: str = Header(default="demo"),
     ) -> ActionDecision:
+        workspace_mode = app_settings.workspace_mode
+        value_limit = app_settings.write_value_limit
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                workspace_policy = WorkspaceService(session).policy(x_reality_tenant)
+                workspace_mode = workspace_policy.mode.value
+                if workspace_policy.value_limit is not None:
+                    value_limit = workspace_policy.value_limit
+            finally:
+                session.close()
+
         def run() -> ActionDecision:
             return action_service.propose(
                 proposal,
                 x_reality_role,
                 x_reality_tenant,
-                workspace_mode=app_settings.workspace_mode,
+                workspace_mode=workspace_mode,
                 order_value=order_value_for(x_reality_tenant, proposal.target_entity),
-                value_limit=app_settings.write_value_limit,
+                value_limit=value_limit,
             )
 
         if app_settings.persistence_enabled:

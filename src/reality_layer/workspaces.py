@@ -15,6 +15,12 @@ class WorkspaceBootstrap:
     connector_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class WorkspacePolicy:
+    mode: WorkspaceMode
+    value_limit: float | None
+
+
 class WorkspaceService:
     """Creates the tenant-scoped workspace baseline without storing credentials."""
 
@@ -82,3 +88,18 @@ class WorkspaceService:
             WorkspaceMode.observe_only,
             tuple(connector_ids),
         )
+
+    def policy(self, tenant_id: str) -> WorkspacePolicy:
+        workspace = self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+        if workspace is None:
+            return WorkspacePolicy(WorkspaceMode.observe_only, None)
+        raw_limit = workspace.thresholds.get("write_value_limit")
+        try:
+            value_limit = float(raw_limit) if raw_limit is not None else None
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Workspace write value limit must be numeric.") from exc
+        return WorkspacePolicy(WorkspaceMode(workspace.mode), value_limit)

@@ -59,3 +59,22 @@ def test_initialize_is_idempotent_for_existing_workspace() -> None:
 
     assert second == first
     assert len(session.connectors) == 2
+
+
+def test_policy_defaults_to_observe_only_without_workspace() -> None:
+    policy = WorkspaceService(FakeSession()).policy("tenant-a")
+
+    assert policy.mode == WorkspaceMode.observe_only
+    assert policy.value_limit is None
+
+
+def test_policy_reads_persisted_mode_and_value_limit() -> None:
+    session = FakeSession()
+    WorkspaceService(session).initialize("tenant-a", "workspace-a")
+    session.workspace.mode = WorkspaceMode.demo_proposal
+    session.workspace.thresholds = {"write_value_limit": "100.5"}
+
+    policy = WorkspaceService(session).policy("tenant-a")
+
+    assert policy.mode == WorkspaceMode.demo_proposal
+    assert policy.value_limit == 100.5
