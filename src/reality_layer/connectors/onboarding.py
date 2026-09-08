@@ -59,3 +59,25 @@ def check_connector(
 
 def check_connectors(names: list[str], settings: Settings) -> list[dict[str, object]]:
     return [asdict(check_connector(name, settings)) for name in names]
+
+
+def preflight_connectors(settings: Settings) -> dict[str, object]:
+    """Check the connector capabilities required for the live MVP demo."""
+    results = check_connectors(["shopify", "easypost"], settings)
+    by_name = {str(result["connector"]): result for result in results}
+    required = {
+        "shopify": ("authenticated", "read_capability", "write_capability"),
+        "easypost": ("authenticated", "read_capability"),
+    }
+    failures = [
+        f"{connector}.{capability}"
+        for connector, capabilities in required.items()
+        for capability in capabilities
+        if not bool(by_name[connector][capability])
+    ]
+    return {
+        "ready": not failures,
+        "required_capabilities": required,
+        "failures": failures,
+        "connectors": results,
+    }

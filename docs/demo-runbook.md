@@ -47,6 +47,15 @@ Validate both connectors without printing credentials:
 REALITY_PERSISTENCE_ENABLED=true reality connect shopify easypost --tenant demo
 ```
 
+Run the single live-demo gate:
+
+```bash
+REALITY_PERSISTENCE_ENABLED=true reality preflight --tenant demo
+```
+
+The preflight must report `"ready": true`. It requires Shopify authentication,
+read, and write capabilities plus EasyPost authentication and read capability.
+
 Confirm that Shopify read and write capabilities are enabled and that EasyPost read
 access succeeds. Stop the demo if either connector is unauthenticated or the
 designated Shopify order is not an eligible, unfulfilled test order.

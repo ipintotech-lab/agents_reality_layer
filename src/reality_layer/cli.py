@@ -12,7 +12,7 @@ from reality_layer.connectors import (
     ShopifyHttpClient,
 )
 from reality_layer.connectors.observe import Normalizer, observe_payload
-from reality_layer.connectors.onboarding import check_connectors
+from reality_layer.connectors.onboarding import check_connectors, preflight_connectors
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.db.models import ConnectorKind
 from reality_layer.storage import LocalObjectStore
@@ -119,6 +119,41 @@ def connect(
         finally:
             session.close()
     if not all(bool(result["authenticated"]) for result in results):
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def preflight(
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+) -> None:
+    """Check all connector capabilities required for the live MVP demo."""
+    import json
+
+    settings = get_settings()
+    try:
+        result = preflight_connectors(settings)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    if settings.persistence_enabled:
+        from reality_layer.db.session import SessionLocal
+
+        session = SessionLocal()
+        try:
+            WorkspaceService(session).record_connector_checks(
+                tenant, result["connectors"]  # type: ignore[arg-type]
+            )
+            session.commit()
+        except (RuntimeError, ValueError, OSError) as exc:
+            session.rollback()
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        finally:
+            session.close()
+
+    typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    if not result["ready"]:
         raise typer.Exit(code=1)
 
 

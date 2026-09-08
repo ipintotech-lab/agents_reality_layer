@@ -49,6 +49,7 @@ reality rehearse
 Use `--runs 5` to verify that repeated local rehearsals remain isolated and reset-safe.
 Use `--output artifacts/rehearsal-proof.json` to save a static fallback proof bundle.
 Use `--summary` to save or print a compact machine-readable rehearsal result.
+Use `reality preflight` to gate the live demo on required connector capabilities.
 
 PostgreSQL persistence coverage is opt-in and expects a disposable database:
 

@@ -1,5 +1,9 @@
 from reality_layer.config import Settings
-from reality_layer.connectors.onboarding import check_connector, check_connectors
+from reality_layer.connectors.onboarding import (
+    check_connector,
+    check_connectors,
+    preflight_connectors,
+)
 
 
 class HealthyShopify:
@@ -48,3 +52,31 @@ def test_missing_credentials_are_actionable_and_secret_free() -> None:
     assert result[0]["authenticated"] is False
     assert "credentials" in str(result[0]["error"])
     assert "secret" not in str(result[0])
+
+
+def test_preflight_requires_shopify_write_and_easypost_read(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "reality_layer.connectors.onboarding.check_connectors",
+        lambda names, settings: [
+            {
+                "connector": "shopify",
+                "authenticated": False,
+                "read_capability": False,
+                "write_capability": False,
+                "error": "unavailable",
+            },
+            {
+                "connector": "easypost",
+                "authenticated": False,
+                "read_capability": False,
+                "write_capability": False,
+                "error": "unavailable",
+            },
+        ],
+    )
+
+    result = preflight_connectors(Settings())
+
+    assert result["ready"] is False
+    assert "shopify.authenticated" in result["failures"]
+    assert "easypost.authenticated" in result["failures"]
