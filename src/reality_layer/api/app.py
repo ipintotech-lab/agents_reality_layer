@@ -21,6 +21,7 @@ from reality_layer.config import Settings, get_settings
 from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
 from reality_layer.connectors.persistence import ObservationIngestionService
+from reality_layer.db.models import ConnectorKind
 from reality_layer.storage import LocalObjectStore
 from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
@@ -358,6 +359,12 @@ def create_app(
             if app_settings.persistence_enabled:
                 session = make_session()
                 try:
+                    if not WorkspaceService(session).has_capability(
+                        x_reality_tenant, ConnectorKind.shopify, "write"
+                    ):
+                        raise ValueError(
+                            "Shopify write capability is not enabled for this workspace."
+                        )
                     restore_actions(x_reality_tenant, session)
                 finally:
                     session.close()
@@ -392,6 +399,12 @@ def create_app(
             if app_settings.persistence_enabled:
                 session = make_session()
                 try:
+                    if not WorkspaceService(session).has_capability(
+                        x_reality_tenant, ConnectorKind.shopify, "read"
+                    ):
+                        raise ValueError(
+                            "Shopify read capability is not enabled for this workspace."
+                        )
                     restore_actions(x_reality_tenant, session)
                 finally:
                     session.close()

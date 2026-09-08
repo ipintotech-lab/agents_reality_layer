@@ -137,3 +137,20 @@ class WorkspaceService:
                 "error": result.get("error"),
             }
         self.session.flush()
+
+    def has_capability(self, tenant_id: str, kind: ConnectorKind, capability: str) -> bool:
+        workspace = self.session.scalars(
+            select(Workspace)
+            .where(Workspace.tenant_id == tenant_id)
+            .order_by(Workspace.created_at.asc())
+        ).first()
+        if workspace is None:
+            return False
+        connector = self.session.scalars(
+            select(Connector).where(
+                Connector.tenant_id == tenant_id,
+                Connector.workspace_id == workspace.workspace_id,
+                Connector.kind == kind,
+            )
+        ).first()
+        return bool(connector and connector.capabilities.get(capability) is True)
