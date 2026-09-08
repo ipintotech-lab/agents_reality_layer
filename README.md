@@ -39,6 +39,12 @@ python -m pip install -e ".[dev]"
 pytest
 ```
 
+PostgreSQL persistence coverage is opt-in and expects a disposable database:
+
+```bash
+REALITY_TEST_DATABASE_URL=postgresql+psycopg://... pytest tests/integration
+```
+
 ## Docs
 
 | Doc | Purpose |
