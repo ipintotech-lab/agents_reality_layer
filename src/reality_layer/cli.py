@@ -440,3 +440,23 @@ def serve(
     import uvicorn
 
     uvicorn.run("reality_layer.api.app:app", host=host, port=port, reload=False)
+
+
+@app.command(name="mcp-server")
+def mcp_server(
+    transport: str = typer.Option(
+        "stdio", help="MCP transport: stdio, sse, or streamable-http."
+    ),
+    api_url: str | None = typer.Option(
+        None,
+        help="Base URL of a running `reality serve` deployment. "
+        "Defaults to an in-process app when omitted.",
+    ),
+    host: str = typer.Option("127.0.0.1", help="Bind host for network transports."),
+    port: int = typer.Option(8100, help="Bind port for network transports."),
+) -> None:
+    """Run a network-addressable MCP server exposing the Reality Layer adapter tools."""
+    from reality_layer.mcp_server import build_server
+
+    server = build_server(base_url=api_url, host=host, port=port)
+    server.run(transport=transport)  # type: ignore[arg-type]

@@ -1,5 +1,6 @@
 from typing import Any, cast
 
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -8,10 +9,19 @@ from reality_layer.api.app import create_app
 
 
 class RealityMcpAdapter:
-    """MCP-tool-shaped facade over the canonical REST application contract."""
+    """MCP-tool-shaped facade over the canonical REST application contract.
 
-    def __init__(self, app: FastAPI | None = None) -> None:
-        self._client = TestClient(app or create_app())
+    Defaults to an in-process ASGI transport (``TestClient``) for local
+    scripted use. Pass ``base_url`` to talk to a real, network-addressable
+    Reality Layer deployment instead (e.g. one started with ``reality serve``).
+    """
+
+    def __init__(self, app: FastAPI | None = None, base_url: str | None = None) -> None:
+        self._client: httpx.Client
+        if base_url is not None:
+            self._client = httpx.Client(base_url=base_url)
+        else:
+            self._client = TestClient(app or create_app())
 
     def _headers(self, tenant_id: str, role: str = "observer") -> dict[str, str]:
         return {

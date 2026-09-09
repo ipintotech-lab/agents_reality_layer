@@ -28,10 +28,11 @@ durable `observe_only` <-> `demo_proposal` workspace mode transitions.
 
 The following remain partial or planned: full conflict claims and resolution workflows,
 field-level permission filtering and ABAC, durable HITL expiry/delegation/supersession,
-an agent SDK, a network-addressable MCP server (the adapter is currently in-process only),
-complete connector persistence, live Shopify/EasyPost validation, a live dress rehearsal,
-Railway deployment with a persistent PostgreSQL volume, and signed attestations. REST is
-the canonical interface.
+an agent SDK, complete connector persistence, live Shopify/EasyPost validation, a live
+dress rehearsal, Railway deployment with a persistent PostgreSQL volume, and signed
+attestations. REST is the canonical interface; a network-addressable MCP server
+(`reality mcp-server`) exposes the same adapter tools over stdio, SSE, or streamable-HTTP,
+optionally pointed at a running `reality serve` deployment via `--api-url`.
 
 The product contract requires new workspaces to start in `observe_only` mode. With
 persistence enabled an operator enables proposals explicitly (`reality workspace --mode
@@ -56,6 +57,9 @@ Use `--runs 5` to verify that repeated local rehearsals remain isolated and rese
 Use `--output artifacts/rehearsal-proof.json` to save a static fallback proof bundle.
 Use `--summary` to save or print a compact machine-readable rehearsal result.
 Use `reality preflight` to gate the live demo on required connector capabilities.
+Use `reality mcp-server` to run a network-addressable MCP server exposing the same
+adapter tools (`--api-url` points it at a running `reality serve` deployment instead
+of an in-process app; `--transport` selects `stdio`, `sse`, or `streamable-http`).
 
 PostgreSQL persistence coverage is opt-in and expects a disposable database:
 

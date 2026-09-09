@@ -41,7 +41,6 @@ The following are partial or planned rather than complete MVP capabilities:
 - durable HITL expiry, delegation, supersession, and scoped approvals;
 - agent SDK and dashboard permission filtering / provenance drill-down;
 - complete connector persistence and health-state surfacing;
-- a network-addressable MCP server (the adapter is currently in-process only);
 - live Shopify/EasyPost behavior validation and a live dress rehearsal;
 - Railway deployment with a persistent PostgreSQL volume;
 - signed attestations or external notarization.
@@ -721,7 +720,7 @@ test environments during demo preflight.
 | 4 — Govern | Typed proposals, RBAC policies, thresholds, denial path, Approval screen | Agent intent is separated from authorized execution | Complete |
 | 5 — Act | Shopify test cancellation, preconditions, semantic idempotency, append-only action events | Approved action executes at most once | Complete (deterministic test adapter) |
 | 6 — Verify | Polling read-after-write, verification observation, proof bundle, assurance level | Full loop ends in `verified` | Complete |
-| 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts | Complete (`RealityMcpAdapter` is an in-process facade, not a network MCP server) |
+| 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts | Complete (`RealityMcpAdapter` for in-process use; `reality mcp-server` runs it as a real network MCP server over stdio/SSE/streamable-HTTP) |
 | 8 — Rehearse | Seed/reset tooling, runbook, latency tests, failure injection, fallback recording | Five consecutive three-to-four-minute rehearsals succeed | Complete against the local fallback path; live-service dress rehearsal pending credentials |
 
 Local fallback status (2026-09-08): five consecutive `reality rehearse --runs 5`
@@ -736,7 +735,6 @@ infrastructure not in this repository:
 
 - live Shopify/EasyPost authentication, scope, and behavior validation
   (`reality preflight`), and a full dress rehearsal against a real test order;
-- a network-addressable MCP server exposing the adapter tools;
 - a Railway deployment with a persistent volume for PostgreSQL.
 
 ---
