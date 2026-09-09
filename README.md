@@ -13,24 +13,30 @@ Two core systems:
 Model-independent. Designed for LangGraph, CrewAI, Claude Agent SDK, MCP clients, and
 custom orchestrators.
 
+![Reality Layer workflow: observe, compile, world state, agent proposes, authorize and execute, verify and prove](docs/assets/workflow.jpg)
+
 ## Status
 
-Investor MVP prototype in active development on the `verifier-worker` branch. The current
-codebase contains a working Order-to-Cash control loop with tenant-scoped observations,
+Investor MVP prototype. All nine build-plan phases are functionally complete against the
+local fallback path: a working Order-to-Cash control loop with tenant-scoped observations,
 World State projections, typed action proposals, default-deny policy evaluation,
 precondition revalidation, idempotent Shopify test-adapter execution, independent
 read-after-write verification, hash-linked action/commit events, proof bundles, bounded
-verifier-worker polling, and optional PostgreSQL persistence.
+verifier-worker polling, optional PostgreSQL persistence, an in-process MCP adapter, a
+read-only operator dashboard (served at `/`), a scripted agent demo (`reality demo`), and
+durable `observe_only` <-> `demo_proposal` workspace mode transitions.
 
 The following remain partial or planned: full conflict claims and resolution workflows,
 field-level permission filtering and ABAC, durable HITL expiry/delegation/supersession,
-the MCP adapter and SDK, complete workspace/connector persistence, live Shopify/EasyPost
-validation, signed attestations, and dashboard/demo UI. REST is currently the canonical
-active interface.
+an agent SDK, a network-addressable MCP server (the adapter is currently in-process only),
+complete connector persistence, live Shopify/EasyPost validation, a live dress rehearsal,
+Railway deployment with a persistent PostgreSQL volume, and signed attestations. REST is
+the canonical interface.
 
-The product contract requires new workspaces to start in `observe_only` mode. The current
-demo runtime uses an explicit `demo_proposal` configuration exception until durable
-workspace initialization is complete.
+The product contract requires new workspaces to start in `observe_only` mode. With
+persistence enabled an operator enables proposals explicitly (`reality workspace --mode
+demo_proposal` or `POST /v1/workspace/mode`); without persistence the runtime falls back
+to a `REALITY_WORKSPACE_MODE` setting.
 
 ## Development
 
