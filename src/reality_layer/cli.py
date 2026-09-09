@@ -172,13 +172,16 @@ def preflight(
     order_id: str | None = typer.Option(
         None, "--order-id", help="Shopify test order ID to validate for cancellation."
     ),
+    shipment_id: str | None = typer.Option(
+        None, "--shipment-id", help="EasyPost test tracker ID to validate."
+    ),
 ) -> None:
     """Check all connector capabilities required for the live MVP demo."""
     import json
 
     settings = get_settings()
     try:
-        result = preflight_demo(settings, order_id)
+        result = preflight_demo(settings, order_id, shipment_id)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc

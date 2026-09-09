@@ -6,6 +6,7 @@ from reality_layer.connectors.onboarding import (
     preflight_connectors,
     preflight_demo,
     validate_demo_order,
+    validate_demo_shipment,
 )
 
 
@@ -90,6 +91,9 @@ class ReadyEasyPost:
     def health_check(self) -> bool:
         return True
 
+    def read_tracker(self, tracker_id: str) -> dict[str, object]:
+        return {"id": tracker_id, "tracking_code": "1Z999", "status": "in_transit"}
+
 
 def test_preflight_demo_checks_the_exact_order() -> None:
     result = preflight_demo(
@@ -105,6 +109,24 @@ def test_preflight_demo_checks_the_exact_order() -> None:
 
     assert result["ready"] is True
     assert result["demo_order"]["eligible"] is True
+
+
+def test_preflight_demo_checks_linked_order_and_shipment() -> None:
+    result = preflight_demo(
+        Settings(
+            shopify_domain="shop.example",
+            shopify_access_token="secret",
+            easypost_api_key="secret",
+        ),
+        order_id="order-1",
+        shipment_id="shp-1",
+        shopify_factory=ReadyShopify,
+        easypost_factory=ReadyEasyPost,
+    )
+
+    assert result["ready"] is True
+    assert result["demo_order"]["order_id"] == "order-1"
+    assert result["demo_shipment"]["shipment_id"] == "shp-1"
 
 
 def test_preflight_demo_reports_unsafe_exact_order() -> None:
@@ -148,3 +170,22 @@ def test_demo_order_validation_accepts_open_unfulfilled_order() -> None:
     )
 
     assert result["eligible"] is True
+
+
+def test_demo_shipment_validation_requires_identity_tracking_and_status() -> None:
+    result = validate_demo_shipment(
+        {"id": "shp-1", "tracking_code": "1Z999", "status": "in_transit"},
+        "shp-1",
+    )
+
+    assert result["eligible"] is True
+
+
+def test_demo_shipment_validation_rejects_missing_tracking_code() -> None:
+    result = validate_demo_shipment(
+        {"id": "shp-1", "status": "in_transit"},
+        "shp-1",
+    )
+
+    assert result["eligible"] is False
+    assert result["failures"] == ["shipment.missing_tracking_code"]

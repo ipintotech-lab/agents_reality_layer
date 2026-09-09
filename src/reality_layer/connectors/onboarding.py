@@ -74,6 +74,7 @@ def preflight_connectors(settings: Settings) -> dict[str, object]:
 def preflight_demo(
     settings: Settings,
     order_id: str | None = None,
+    shipment_id: str | None = None,
     shopify_factory: Callable[[str, str], ShopifyHttpClient] = ShopifyHttpClient,
     easypost_factory: Callable[[str], EasyPostHttpClient] = EasyPostHttpClient,
 ) -> dict[str, object]:
@@ -83,40 +84,66 @@ def preflight_demo(
         shopify_factory=shopify_factory,
         easypost_factory=easypost_factory,
     )
-    if order_id is None:
+    if order_id is None and shipment_id is None:
         return result
 
     connectors = cast(list[dict[str, object]], result["connectors"])
-    shopify_result = next(
-        connector for connector in connectors if connector["connector"] == "shopify"
-    )
-    if shopify_result["authenticated"] and shopify_result["read_capability"]:
-        try:
-            order = shopify_factory(
-                settings.shopify_domain, settings.shopify_access_token
-            ).read_order(order_id)
-            order_check = validate_demo_order(order, order_id)
-        except (RuntimeError, ValueError, OSError) as exc:
+    failures = cast(list[str], result["failures"])
+    if order_id is not None:
+        shopify_result = next(
+            connector for connector in connectors if connector["connector"] == "shopify"
+        )
+        if shopify_result["authenticated"] and shopify_result["read_capability"]:
+            try:
+                order = shopify_factory(
+                    settings.shopify_domain, settings.shopify_access_token
+                ).read_order(order_id)
+                order_check = validate_demo_order(order, order_id)
+            except (RuntimeError, ValueError, OSError) as exc:
+                order_check = {
+                    "eligible": False,
+                    "order_id": order_id,
+                    "failures": ["order.read_failed"],
+                    "error": str(exc),
+                }
+        else:
             order_check = {
                 "eligible": False,
                 "order_id": order_id,
-                "failures": ["order.read_failed"],
-                "error": str(exc),
+                "failures": ["order.connector_unavailable"],
             }
-    else:
-        order_check = {
-            "eligible": False,
-            "order_id": order_id,
-            "failures": ["order.connector_unavailable"],
-        }
-    result["demo_order"] = order_check
-    if not bool(order_check["eligible"]):
-        result["ready"] = False
-        failures = cast(list[str], result["failures"])
-        result["failures"] = [
-            *failures,
-            *cast(list[str], order_check["failures"]),
-        ]
+        result["demo_order"] = order_check
+        if not bool(order_check["eligible"]):
+            result["ready"] = False
+            failures.extend(cast(list[str], order_check["failures"]))
+
+    if shipment_id is not None:
+        easypost_result = next(
+            connector for connector in connectors if connector["connector"] == "easypost"
+        )
+        if easypost_result["authenticated"] and easypost_result["read_capability"]:
+            try:
+                shipment = easypost_factory(settings.easypost_api_key).read_tracker(
+                    shipment_id
+                )
+                shipment_check = validate_demo_shipment(shipment, shipment_id)
+            except (RuntimeError, ValueError, OSError) as exc:
+                shipment_check = {
+                    "eligible": False,
+                    "shipment_id": shipment_id,
+                    "failures": ["shipment.read_failed"],
+                    "error": str(exc),
+                }
+        else:
+            shipment_check = {
+                "eligible": False,
+                "shipment_id": shipment_id,
+                "failures": ["shipment.connector_unavailable"],
+            }
+        result["demo_shipment"] = shipment_check
+        if not bool(shipment_check["eligible"]):
+            result["ready"] = False
+            failures.extend(cast(list[str], shipment_check["failures"]))
     return result
 
 
@@ -185,5 +212,28 @@ def validate_demo_order(payload: dict[str, object], order_id: str) -> dict[str, 
         "order_id": order_id,
         "status": status,
         "fulfillment_status": fulfillment_status,
+        "failures": failures,
+    }
+
+
+def validate_demo_shipment(
+    payload: dict[str, object], shipment_id: str
+) -> dict[str, object]:
+    """Validate that the live EasyPost tracker belongs to the demo shipment."""
+    actual_id = payload.get("id")
+    tracking_code = payload.get("tracking_code")
+    status = payload.get("status")
+    failures: list[str] = []
+    if str(actual_id) != shipment_id:
+        failures.append("shipment.id_mismatch")
+    if not isinstance(tracking_code, str) or not tracking_code:
+        failures.append("shipment.missing_tracking_code")
+    if not isinstance(status, str) or not status:
+        failures.append("shipment.missing_status")
+    return {
+        "eligible": not failures,
+        "shipment_id": shipment_id,
+        "tracking_code": tracking_code,
+        "status": status,
         "failures": failures,
     }

@@ -97,6 +97,15 @@ validate that exact order is open and unfulfilled:
 REALITY_PERSISTENCE_ENABLED=true reality preflight --tenant demo --order-id 123
 ```
 
+When the matching EasyPost tracker is known, validate both sides together:
+
+```bash
+REALITY_PERSISTENCE_ENABLED=true reality preflight \
+  --tenant demo --order-id 123 --shipment-id shp_123
+```
+
+The result must include eligible `demo_order` and `demo_shipment` checks.
+
 Confirm that Shopify read and write capabilities are enabled and that EasyPost read
 access succeeds. Stop the demo if either connector is unauthenticated or the
 designated Shopify order is not an eligible, unfulfilled test order.
