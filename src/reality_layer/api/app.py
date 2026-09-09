@@ -22,6 +22,7 @@ from reality_layer.api.schemas import WorkspaceModeRequest
 from reality_layer.config import Settings, get_settings
 from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
+from reality_layer.connectors.onboarding import preflight_demo
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.db.models import ConnectorKind
 from reality_layer.storage import LocalObjectStore
@@ -101,6 +102,14 @@ def create_app(
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/v1/preflight")
+    def live_preflight(
+        order_id: str | None = None,
+        shipment_id: str | None = None,
+    ) -> dict[str, object]:
+        """Return sanitized live-demo connector and target eligibility checks."""
+        return preflight_demo(app_settings, order_id, shipment_id)
 
     @app.get("/v1/connectors")
     def connector_status(

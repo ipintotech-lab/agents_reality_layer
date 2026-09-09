@@ -105,6 +105,8 @@ REALITY_PERSISTENCE_ENABLED=true reality preflight \
 ```
 
 The result must include eligible `demo_order` and `demo_shipment` checks.
+The same sanitized check is available to REST clients at
+`GET /v1/preflight?order_id=123&shipment_id=shp_123`.
 
 Confirm that Shopify read and write capabilities are enabled and that EasyPost read
 access succeeds. Stop the demo if either connector is unauthenticated or the
