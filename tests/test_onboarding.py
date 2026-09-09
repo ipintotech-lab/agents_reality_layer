@@ -1,8 +1,10 @@
 from reality_layer.config import Settings
 from reality_layer.connectors.onboarding import (
+    ConnectorCheck,
     check_connector,
     check_connectors,
     preflight_connectors,
+    preflight_demo,
     validate_demo_order,
 )
 
@@ -57,23 +59,10 @@ def test_missing_credentials_are_actionable_and_secret_free() -> None:
 
 def test_preflight_requires_shopify_write_and_easypost_read(monkeypatch) -> None:
     monkeypatch.setattr(
-        "reality_layer.connectors.onboarding.check_connectors",
-        lambda names, settings: [
-            {
-                "connector": "shopify",
-                "authenticated": False,
-                "read_capability": False,
-                "write_capability": False,
-                "error": "unavailable",
-            },
-            {
-                "connector": "easypost",
-                "authenticated": False,
-                "read_capability": False,
-                "write_capability": False,
-                "error": "unavailable",
-            },
-        ],
+        "reality_layer.connectors.onboarding.check_connector",
+        lambda name, settings, **factories: ConnectorCheck(
+            name, False, False, False, "unavailable"
+        ),
     )
 
     result = preflight_connectors(Settings())
@@ -81,6 +70,65 @@ def test_preflight_requires_shopify_write_and_easypost_read(monkeypatch) -> None
     assert result["ready"] is False
     assert "shopify.authenticated" in result["failures"]
     assert "easypost.authenticated" in result["failures"]
+
+
+class ReadyShopify:
+    def __init__(self, domain: str, token: str) -> None:
+        pass
+
+    def health_check(self) -> bool:
+        return True
+
+    def read_order(self, order_id: str) -> dict[str, object]:
+        return {"id": order_id, "financial_status": "paid"}
+
+
+class ReadyEasyPost:
+    def __init__(self, api_key: str) -> None:
+        pass
+
+    def health_check(self) -> bool:
+        return True
+
+
+def test_preflight_demo_checks_the_exact_order() -> None:
+    result = preflight_demo(
+        Settings(
+            shopify_domain="shop.example",
+            shopify_access_token="secret",
+            easypost_api_key="secret",
+        ),
+        order_id="order-1",
+        shopify_factory=ReadyShopify,
+        easypost_factory=ReadyEasyPost,
+    )
+
+    assert result["ready"] is True
+    assert result["demo_order"]["eligible"] is True
+
+
+def test_preflight_demo_reports_unsafe_exact_order() -> None:
+    class FulfilledShopify(ReadyShopify):
+        def read_order(self, order_id: str) -> dict[str, object]:
+            return {
+                "id": order_id,
+                "financial_status": "paid",
+                "fulfillment_status": "fulfilled",
+            }
+
+    result = preflight_demo(
+        Settings(
+            shopify_domain="shop.example",
+            shopify_access_token="secret",
+            easypost_api_key="secret",
+        ),
+        order_id="order-1",
+        shopify_factory=FulfilledShopify,
+        easypost_factory=ReadyEasyPost,
+    )
+
+    assert result["ready"] is False
+    assert result["demo_order"]["failures"] == ["order.fulfilled"]
 
 
 def test_demo_order_validation_rejects_fulfilled_order() -> None:

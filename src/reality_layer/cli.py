@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated
 
 import typer
 
@@ -12,11 +12,7 @@ from reality_layer.connectors import (
     ShopifyHttpClient,
 )
 from reality_layer.connectors.observe import Normalizer, observe_payload
-from reality_layer.connectors.onboarding import (
-    check_connectors,
-    preflight_connectors,
-    validate_demo_order,
-)
+from reality_layer.connectors.onboarding import check_connectors, preflight_demo
 from reality_layer.connectors.persistence import ObservationIngestionService
 from reality_layer.db.models import ConnectorKind
 from reality_layer.storage import LocalObjectStore
@@ -182,42 +178,10 @@ def preflight(
 
     settings = get_settings()
     try:
-        result = preflight_connectors(settings)
+        result = preflight_demo(settings, order_id)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-
-    if order_id is not None:
-        connectors = cast(list[dict[str, object]], result["connectors"])
-        shopify_result = next(
-            connector
-            for connector in connectors
-            if connector["connector"] == "shopify"
-        )
-        if shopify_result["authenticated"] and shopify_result["read_capability"]:
-            try:
-                order = ShopifyHttpClient(
-                    settings.shopify_domain, settings.shopify_access_token
-                ).read_order(order_id)
-                order_check = validate_demo_order(order, order_id)
-            except (RuntimeError, ValueError, OSError) as exc:
-                order_check = {
-                    "eligible": False,
-                    "order_id": order_id,
-                    "failures": ["order.read_failed"],
-                    "error": str(exc),
-                }
-        else:
-            order_check = {
-                "eligible": False,
-                "order_id": order_id,
-                "failures": ["order.connector_unavailable"],
-            }
-        result["demo_order"] = order_check
-        if not bool(order_check["eligible"]):
-            result["ready"] = False
-            failures = cast(list[str], result["failures"])
-            result["failures"] = [*failures, *cast(list[str], order_check["failures"])]
 
     if settings.persistence_enabled:
         from reality_layer.db.session import SessionLocal

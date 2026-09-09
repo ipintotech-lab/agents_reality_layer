@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from typing import cast
 
 from reality_layer.config import Settings
 from reality_layer.connectors.clients import EasyPostHttpClient, ShopifyHttpClient
@@ -63,7 +64,86 @@ def check_connectors(names: list[str], settings: Settings) -> list[dict[str, obj
 
 def preflight_connectors(settings: Settings) -> dict[str, object]:
     """Check the connector capabilities required for the live MVP demo."""
-    results = check_connectors(["shopify", "easypost"], settings)
+    return _preflight_connectors(
+        settings,
+        shopify_factory=ShopifyHttpClient,
+        easypost_factory=EasyPostHttpClient,
+    )
+
+
+def preflight_demo(
+    settings: Settings,
+    order_id: str | None = None,
+    shopify_factory: Callable[[str, str], ShopifyHttpClient] = ShopifyHttpClient,
+    easypost_factory: Callable[[str], EasyPostHttpClient] = EasyPostHttpClient,
+) -> dict[str, object]:
+    """Run connector and optional target-order checks for the live MVP demo."""
+    result = _preflight_connectors(
+        settings,
+        shopify_factory=shopify_factory,
+        easypost_factory=easypost_factory,
+    )
+    if order_id is None:
+        return result
+
+    connectors = cast(list[dict[str, object]], result["connectors"])
+    shopify_result = next(
+        connector for connector in connectors if connector["connector"] == "shopify"
+    )
+    if shopify_result["authenticated"] and shopify_result["read_capability"]:
+        try:
+            order = shopify_factory(
+                settings.shopify_domain, settings.shopify_access_token
+            ).read_order(order_id)
+            order_check = validate_demo_order(order, order_id)
+        except (RuntimeError, ValueError, OSError) as exc:
+            order_check = {
+                "eligible": False,
+                "order_id": order_id,
+                "failures": ["order.read_failed"],
+                "error": str(exc),
+            }
+    else:
+        order_check = {
+            "eligible": False,
+            "order_id": order_id,
+            "failures": ["order.connector_unavailable"],
+        }
+    result["demo_order"] = order_check
+    if not bool(order_check["eligible"]):
+        result["ready"] = False
+        failures = cast(list[str], result["failures"])
+        result["failures"] = [
+            *failures,
+            *cast(list[str], order_check["failures"]),
+        ]
+    return result
+
+
+def _preflight_connectors(
+    settings: Settings,
+    *,
+    shopify_factory: Callable[[str, str], ShopifyHttpClient],
+    easypost_factory: Callable[[str], EasyPostHttpClient],
+) -> dict[str, object]:
+    results = [
+        asdict(
+            check_connector(
+                "shopify",
+                settings,
+                shopify_factory=shopify_factory,
+                easypost_factory=easypost_factory,
+            )
+        ),
+        asdict(
+            check_connector(
+                "easypost",
+                settings,
+                shopify_factory=shopify_factory,
+                easypost_factory=easypost_factory,
+            )
+        ),
+    ]
     by_name = {str(result["connector"]): result for result in results}
     required = {
         "shopify": ("authenticated", "read_capability", "write_capability"),
