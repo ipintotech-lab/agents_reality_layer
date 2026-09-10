@@ -44,10 +44,12 @@ configuration needed for the database itself.
 ## 3. Deploy `reality-api`
 
 Create the service pointed at this repo (GitHub integration or `railway up` from a
-clone). `railway.toml` in the repo root already sets:
+clone). The repo root ships a `Dockerfile` (Railway no longer offers Nixpacks as a
+builder) that runs `pip install .` so the `reality` / `alembic` entry points and
+the `reality_layer` package used by `alembic/env.py` are importable. `railway.toml`
+sets:
 
-- builder: `nixpacks`, install step `pip install .` (so the `reality` entry point
-  and the `reality_layer` package used by `alembic/env.py` are importable);
+- builder: `DOCKERFILE`;
 - start command: `reality serve --host 0.0.0.0 --port $PORT`;
 - `preDeployCommand = "alembic upgrade head"` — migrations run before each release
   cuts over;
@@ -105,6 +107,10 @@ reality verify
 Give it the **same** environment variables as `reality-api` **except** it does not
 serve HTTP and does not need the volume (it only reads/writes Postgres). Disable
 its healthcheck (no port). It shares `REALITY_DATABASE_URL` with the API.
+
+Set its start command in the Railway service settings (railway.toml's
+`startCommand` only covers the API): **Settings → Deploy → Custom Start Command →
+`reality verify`**. The CLI cannot set a per-service start command.
 
 Do **not** put `alembic upgrade head` on this service — migrations belong to the
 API's `preDeployCommand` only, to avoid two services racing on the same DDL.
