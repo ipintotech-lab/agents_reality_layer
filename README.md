@@ -74,6 +74,11 @@ PostgreSQL persistence coverage is opt-in and expects a disposable database:
 REALITY_TEST_DATABASE_URL=postgresql+psycopg://... pytest tests/integration
 ```
 
+The pinned driver is `psycopg` v3 (`psycopg[binary]>=3.2`), so database URLs use the
+`postgresql+psycopg://` scheme. `psycopg2` is **not** a dependency — if your base
+environment ships one (some Anaconda/Conda bases do), remove it or ignore it; do not
+switch URLs to `postgresql+psycopg2://`.
+
 ## Docs
 
 | Doc | Purpose |
