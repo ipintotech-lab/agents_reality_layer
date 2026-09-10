@@ -53,6 +53,7 @@ class ActionService:
         workspace_mode: str = "demo_proposal",
         order_value: float | None = None,
         value_limit: float | None = None,
+        has_conflict: bool = False,
     ) -> ActionDecision:
         existing_id = self._idempotency.get((tenant_id, proposal.idempotency_key))
         if existing_id is not None:
@@ -66,6 +67,7 @@ class ActionService:
             workspace_mode=workspace_mode,
             order_value=order_value,
             value_limit=value_limit,
+            has_conflict=has_conflict,
         )
         self._actions[action_id] = StoredAction(proposal, decision, role, tenant_id)
         self._idempotency[(tenant_id, proposal.idempotency_key)] = action_id

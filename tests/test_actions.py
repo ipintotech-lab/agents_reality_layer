@@ -292,6 +292,46 @@ def test_action_proposal_rejects_credential_like_parameter_fields() -> None:
         ActionProposal(**payload)
 
 
+def test_proposal_against_conflicted_entity_is_denied() -> None:
+    client = TestClient(create_app())
+    headers = {"X-Reality-Tenant": "demo"}
+    client.post(
+        "/v1/observations",
+        json={
+            "observation_id": "obs_shopify_conflict_1",
+            "connector": "shopify",
+            "object_type": "order",
+            "object_id": "shopify-123",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "payload": {"id": "shopify-123", "status": "open"},
+        },
+        headers=headers,
+    )
+    client.post(
+        "/v1/observations",
+        json={
+            "observation_id": "obs_erp_conflict_1",
+            "connector": "erp",
+            "object_type": "order",
+            "object_id": "shopify-123",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "payload": {"id": "shopify-123", "status": "cancelled"},
+        },
+        headers=headers,
+    )
+
+    response = client.post(
+        "/v1/actions",
+        json=proposal(),
+        headers={"X-Reality-Role": "operations", **headers},
+    )
+
+    assert response.status_code == 201
+    decision = response.json()
+    assert decision["status"] == "denied"
+    assert decision["matched_rule"] == "deny.conflict.unresolved"
+
+
 def test_unknown_action_returns_not_found() -> None:
     client = TestClient(create_app())
 

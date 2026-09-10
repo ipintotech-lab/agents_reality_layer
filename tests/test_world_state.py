@@ -121,6 +121,180 @@ def test_commit_reads_are_tenant_scoped() -> None:
     assert response.status_code == 404
 
 
+def test_conflicting_sources_are_detected_and_prior_value_is_kept() -> None:
+    from reality_layer.world_state import Observation, WorldStateService
+
+    service = WorldStateService()
+    service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_carrier_1",
+            connector="carrier-api",
+            object_type="shipment",
+            object_id="shp_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shp_1", "status": "delayed"},
+        ),
+    )
+    state = service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_erp_1",
+            connector="erp",
+            object_type="shipment",
+            object_id="shp_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shp_1", "status": "shipped"},
+        ),
+    )
+
+    assert state.attributes["status"].value == "delayed"
+    assert service.has_open_conflicts("tenant_a", "shipment", "shp_1")
+    conflicts = service.list_conflicts("tenant_a")
+    assert len(conflicts) == 1
+    conflict = conflicts[0]
+    assert conflict.attribute == "status"
+    assert conflict.status == "open"
+    assert {candidate.value for candidate in conflict.candidates} == {"delayed", "shipped"}
+    assert {candidate.connector for candidate in conflict.candidates} == {"carrier-api", "erp"}
+
+
+def test_same_connector_correction_is_not_a_conflict() -> None:
+    from reality_layer.world_state import Observation, WorldStateService
+
+    service = WorldStateService()
+    service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_shopify_1",
+            connector="shopify",
+            object_type="order",
+            object_id="order_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "order_1", "status": "open"},
+        ),
+    )
+    state = service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_shopify_2",
+            connector="shopify",
+            object_type="order",
+            object_id="order_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "order_1", "status": "paid"},
+        ),
+    )
+
+    assert state.attributes["status"].value == "paid"
+    assert not service.has_open_conflicts("tenant_a", "order", "order_1")
+
+
+def test_resolving_a_conflict_updates_state_and_creates_a_commit() -> None:
+    from reality_layer.world_state import Observation, WorldStateService
+
+    service = WorldStateService()
+    service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_carrier_1",
+            connector="carrier-api",
+            object_type="shipment",
+            object_id="shp_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shp_1", "status": "delayed"},
+        ),
+    )
+    service.ingest(
+        "tenant_a",
+        Observation(
+            observation_id="obs_erp_1",
+            connector="erp",
+            object_type="shipment",
+            object_id="shp_1",
+            observed_at=datetime.now(UTC),
+            payload={"id": "shp_1", "status": "shipped"},
+        ),
+    )
+    conflict = service.list_conflicts("tenant_a")[0]
+    version_before = service.get_entity("tenant_a", "shipment", "shp_1").state_version
+
+    resolved = service.resolve_conflict(
+        "tenant_a", conflict.conflict_id, "shipped", "operator@example.com", "carrier lagged"
+    )
+
+    assert resolved.status == "resolved"
+    assert resolved.resolved_value == "shipped"
+    assert not service.has_open_conflicts("tenant_a", "shipment", "shp_1")
+    state = service.get_entity("tenant_a", "shipment", "shp_1")
+    assert state.attributes["status"].value == "shipped"
+    assert state.attributes["status"].connector == "operator"
+    assert state.state_version == version_before + 1
+    commit = service.get_commit_for_state("tenant_a", state)
+    assert commit.cause == f"conflict_resolved:{conflict.conflict_id}"
+
+
+def test_conflicts_api_lists_gets_and_resolves() -> None:
+    client = TestClient(create_app())
+    headers = {"X-Reality-Tenant": "tenant_a"}
+
+    client.post(
+        "/v1/observations",
+        json={
+            "observation_id": "obs_carrier_1",
+            "connector": "carrier-api",
+            "object_type": "shipment",
+            "object_id": "shp_1",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "payload": {"id": "shp_1", "status": "delayed"},
+        },
+        headers=headers,
+    )
+    client.post(
+        "/v1/observations",
+        json={
+            "observation_id": "obs_erp_1",
+            "connector": "erp",
+            "object_type": "shipment",
+            "object_id": "shp_1",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "payload": {"id": "shp_1", "status": "shipped"},
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/v1/conflicts", headers=headers)
+    assert listed.status_code == 200
+    conflicts = listed.json()
+    assert len(conflicts) == 1
+    conflict_id = conflicts[0]["conflict_id"]
+
+    fetched = client.get(f"/v1/conflicts/{conflict_id}", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["conflict_id"] == conflict_id
+
+    missing = client.get("/v1/conflicts/does-not-exist", headers=headers)
+    assert missing.status_code == 404
+
+    denied = client.post(
+        f"/v1/conflicts/{conflict_id}/resolve",
+        json={"resolved_value": "shipped", "reason": "carrier lagged"},
+        headers={**headers, "X-Reality-Role": "observer"},
+    )
+    assert denied.status_code == 403
+
+    resolved = client.post(
+        f"/v1/conflicts/{conflict_id}/resolve",
+        json={"resolved_value": "shipped", "reason": "carrier lagged"},
+        headers={**headers, "X-Reality-Role": "operations"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+
+    after_resolve = client.get("/v1/conflicts?status=open", headers=headers)
+    assert after_resolve.json() == []
+
+
 def test_hydrating_old_state_does_not_reset_latest_commit_cursor() -> None:
     from reality_layer.world_state import Observation, WorldStateService
 

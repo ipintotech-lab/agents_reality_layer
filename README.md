@@ -26,13 +26,18 @@ verifier-worker polling, optional PostgreSQL persistence, an in-process MCP adap
 read-only operator dashboard (served at `/`), a scripted agent demo (`reality demo`), and
 durable `observe_only` <-> `demo_proposal` workspace mode transitions.
 
-The following remain partial or planned: full conflict claims and resolution workflows,
-field-level permission filtering and ABAC, durable HITL expiry/delegation/supersession,
-an agent SDK, complete connector persistence, live Shopify/EasyPost validation, a live
-dress rehearsal, Railway deployment with a persistent PostgreSQL volume, and signed
-attestations. REST is the canonical interface; a network-addressable MCP server
-(`reality mcp-server`) exposes the same adapter tools over stdio, SSE, or streamable-HTTP,
-optionally pointed at a running `reality serve` deployment via `--api-url`.
+Post-MVP, a Phase 9 has also landed: cross-source conflict detection on World State
+attribute merge, a `GET/POST /v1/conflicts` API, and a policy gate that denies proposals
+against an entity with an unresolved conflict. It is in-memory only (not Postgres-backed
+like commits and state projections) and has no CLI or MCP tool surface yet.
+
+The following remain partial or planned: field-level permission filtering and ABAC,
+durable HITL expiry/delegation/supersession, an agent SDK, complete connector
+persistence, live Shopify/EasyPost validation, a live dress rehearsal, Railway
+deployment with a persistent PostgreSQL volume, and signed attestations. REST is the
+canonical interface; a network-addressable MCP server (`reality mcp-server`) exposes the
+same adapter tools over stdio, SSE, or streamable-HTTP, optionally pointed at a running
+`reality serve` deployment via `--api-url`.
 
 The product contract requires new workspaces to start in `observe_only` mode. With
 persistence enabled an operator enables proposals explicitly (`reality workspace --mode

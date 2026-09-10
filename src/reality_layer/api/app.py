@@ -18,7 +18,7 @@ from reality_layer.actions.models import (
     ProofBundle,
 )
 from reality_layer.actions.persistence import ActionEventPersistenceService
-from reality_layer.api.schemas import WorkspaceModeRequest
+from reality_layer.api.schemas import ConflictResolutionRequest, WorkspaceModeRequest
 from reality_layer.config import Settings, get_settings
 from reality_layer.connectors import ShopifyConnector
 from reality_layer.connectors.observe import ObservedPayload
@@ -30,6 +30,7 @@ from reality_layer.workspaces import WorkspaceService
 from reality_layer.world_state import (
     CommitRecord,
     CompilerPersistenceService,
+    Conflict,
     Observation,
     OrderState,
     WorldStateService,
@@ -401,6 +402,52 @@ def create_app(
         except (TypeError, ValueError):
             return None
 
+    def has_conflict_for(tenant_id: str, target_entity: str) -> bool:
+        entity_type, _, entity_id = target_entity.partition(":")
+        if not entity_id:
+            return False
+        return world_state_service.has_open_conflicts(tenant_id, entity_type, entity_id)
+
+    @app.get("/v1/conflicts", response_model=list[Conflict])
+    def list_conflicts(
+        status: str | None = None,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> list[Conflict]:
+        return world_state_service.list_conflicts(x_reality_tenant, status)
+
+    @app.get("/v1/conflicts/{conflict_id}", response_model=Conflict)
+    def get_conflict(
+        conflict_id: str,
+        x_reality_tenant: str = Header(default="demo"),
+    ) -> Conflict:
+        try:
+            return world_state_service.get_conflict(x_reality_tenant, conflict_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/v1/conflicts/{conflict_id}/resolve", response_model=Conflict)
+    def resolve_conflict(
+        conflict_id: str,
+        request: ConflictResolutionRequest,
+        x_reality_tenant: str = Header(default="demo"),
+        x_reality_role: str = Header(default="observer"),
+    ) -> Conflict:
+        if x_reality_role not in {"operations", "admin", "system"}:
+            raise HTTPException(
+                status_code=403,
+                detail="Only operations, admin, or system may resolve a conflict.",
+            )
+        try:
+            return world_state_service.resolve_conflict(
+                x_reality_tenant,
+                conflict_id,
+                request.resolved_value,
+                x_reality_role,
+                request.reason,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.post("/v1/actions", response_model=ActionDecision, status_code=201)
     def propose_action(
         proposal: ActionProposal,
@@ -427,6 +474,7 @@ def create_app(
                 workspace_mode=workspace_mode,
                 order_value=order_value_for(x_reality_tenant, proposal.target_entity),
                 value_limit=value_limit,
+                has_conflict=has_conflict_for(x_reality_tenant, proposal.target_entity),
             )
 
         if app_settings.persistence_enabled:

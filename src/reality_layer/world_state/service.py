@@ -3,7 +3,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from reality_layer.reality_git import hash_json
-from reality_layer.world_state.models import CommitRecord, Observation, OrderState, StateAttribute
+from reality_layer.world_state.models import (
+    CommitRecord,
+    Conflict,
+    ConflictCandidate,
+    Observation,
+    OrderState,
+    StateAttribute,
+)
 
 
 class WorldStateService:
@@ -12,6 +19,8 @@ class WorldStateService:
         self._states: dict[tuple[str, str, str], OrderState] = {}
         self._commits: dict[tuple[str, str], CommitRecord] = {}
         self._latest_commit: dict[str, str] = {}
+        self._open_conflicts: dict[tuple[str, str, str, str], Conflict] = {}
+        self._conflicts_by_id: dict[tuple[str, str], Conflict] = {}
 
     def ingest(
         self,
@@ -27,12 +36,71 @@ class WorldStateService:
         self._observations[key] = observation
         state_key = (tenant_id, observation.object_type, observation.object_id)
         previous = self._states.get(state_key)
-        attributes = self._project(observation)
+        previous_attributes = previous.attributes if previous else {}
+        incoming_attributes = self._project(observation)
+
+        attributes = dict(previous_attributes)
+        for name, incoming in incoming_attributes.items():
+            existing = previous_attributes.get(name)
+            if (
+                existing is not None
+                and existing.value != incoming.value
+                and existing.freshness == "fresh"
+                and existing.connector is not None
+                and existing.connector != incoming.connector
+            ):
+                self._record_conflict(
+                    tenant_id,
+                    observation.object_type,
+                    observation.object_id,
+                    name,
+                    existing,
+                    incoming,
+                )
+                continue
+            attributes[name] = incoming
+
         before = self._attributes_for(previous)
         after = {name: attribute.model_dump(mode="json") for name, attribute in attributes.items()}
         semantic_diff = self._diff(before, after)
         if previous is not None and not semantic_diff["attributes_changed"]:
             return previous
+
+        commit = self._create_commit(
+            tenant_id=tenant_id,
+            entity_type=observation.object_type,
+            entity_id=observation.object_id,
+            cause=cause,
+            observation_ids=[observation.observation_id],
+            before=before,
+            after=after,
+            semantic_diff=semantic_diff,
+            assurance_level=assurance_level,
+        )
+        state = OrderState(
+            tenant_id=tenant_id,
+            entity_id=f"{observation.object_type}:{observation.object_id}",
+            entity_type=observation.object_type.capitalize(),
+            state_version=(previous.state_version + 1) if previous else 1,
+            attributes=attributes,
+            commit_id=commit.commit_id,
+        )
+        self._states[state_key] = state
+        return state
+
+    def _create_commit(
+        self,
+        *,
+        tenant_id: str,
+        entity_type: str,
+        entity_id: str,
+        cause: str,
+        observation_ids: list[str],
+        before: Mapping[str, object],
+        after: Mapping[str, object],
+        semantic_diff: dict[str, object],
+        assurance_level: str,
+    ) -> CommitRecord:
         parent_commit_id = self._latest_commit.get(tenant_id)
         commit_id = f"cmt_{uuid4().hex[:16]}"
         previous_hash = self._latest_hash(tenant_id)
@@ -41,10 +109,10 @@ class WorldStateService:
                 "commit_id": commit_id,
                 "tenant_id": tenant_id,
                 "parent_commit_id": parent_commit_id,
-                "entity_type": observation.object_type,
-                "entity_id": observation.object_id,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
                 "cause": cause,
-                "observation_ids": [observation.observation_id],
+                "observation_ids": observation_ids,
                 "before": before,
                 "after": after,
                 "semantic_diff": semantic_diff,
@@ -55,12 +123,12 @@ class WorldStateService:
             commit_id=commit_id,
             tenant_id=tenant_id,
             parent_commit_id=parent_commit_id,
-            entity_type=observation.object_type,
-            entity_id=observation.object_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
             cause=cause,
-            observation_ids=[observation.observation_id],
-            before=before,
-            after=after,
+            observation_ids=observation_ids,
+            before=dict(before),
+            after=dict(after),
             semantic_diff=semantic_diff,
             assurance_level=assurance_level,
             previous_hash=previous_hash,
@@ -68,16 +136,151 @@ class WorldStateService:
         )
         self._commits[(tenant_id, commit_id)] = commit
         self._latest_commit[tenant_id] = commit_id
-        state = OrderState(
-            tenant_id=tenant_id,
-            entity_id=f"{observation.object_type}:{observation.object_id}",
-            entity_type=observation.object_type.capitalize(),
-            state_version=(previous.state_version + 1) if previous else 1,
-            attributes=attributes,
-            commit_id=commit_id,
+        return commit
+
+    @staticmethod
+    def _last_observation_id(attribute: StateAttribute) -> str | None:
+        return attribute.source_observation_ids[-1] if attribute.source_observation_ids else None
+
+    def _record_conflict(
+        self,
+        tenant_id: str,
+        entity_type: str,
+        entity_id: str,
+        attribute: str,
+        existing: StateAttribute,
+        incoming: StateAttribute,
+    ) -> Conflict:
+        conflict_key = (tenant_id, entity_type, entity_id, attribute)
+        open_conflict = self._open_conflicts.get(conflict_key)
+        incoming_candidate = ConflictCandidate(
+            value=incoming.value,
+            connector=incoming.connector,
+            observation_id=self._last_observation_id(incoming),
+            observed_at=incoming.observed_at,
+            confidence=incoming.confidence,
         )
-        self._states[state_key] = state
-        return state
+        if open_conflict is not None:
+            already_seen = any(
+                candidate.connector == incoming_candidate.connector
+                and candidate.value == incoming_candidate.value
+                for candidate in open_conflict.candidates
+            )
+            if not already_seen:
+                open_conflict.candidates.append(incoming_candidate)
+            return open_conflict
+
+        existing_candidate = ConflictCandidate(
+            value=existing.value,
+            connector=existing.connector,
+            observation_id=self._last_observation_id(existing),
+            observed_at=existing.observed_at,
+            confidence=existing.confidence,
+        )
+        conflict = Conflict(
+            conflict_id=f"cnf_{uuid4().hex[:16]}",
+            tenant_id=tenant_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            attribute=attribute,
+            candidates=[existing_candidate, incoming_candidate],
+            detected_at=datetime.now(UTC),
+        )
+        self._open_conflicts[conflict_key] = conflict
+        self._conflicts_by_id[(tenant_id, conflict.conflict_id)] = conflict
+        return conflict
+
+    def has_open_conflicts(self, tenant_id: str, entity_type: str, entity_id: str) -> bool:
+        return any(
+            key[0] == tenant_id and key[1] == entity_type and key[2] == entity_id
+            for key in self._open_conflicts
+        )
+
+    def get_conflict(self, tenant_id: str, conflict_id: str) -> Conflict:
+        try:
+            return self._conflicts_by_id[(tenant_id, conflict_id)]
+        except KeyError as exc:
+            raise KeyError(f"Unknown conflict: {conflict_id}") from exc
+
+    def list_conflicts(self, tenant_id: str, status: str | None = None) -> list[Conflict]:
+        conflicts = [
+            conflict
+            for (conflict_tenant, _), conflict in self._conflicts_by_id.items()
+            if conflict_tenant == tenant_id and (status is None or conflict.status == status)
+        ]
+        return sorted(conflicts, key=lambda conflict: conflict.detected_at)
+
+    def resolve_conflict(
+        self,
+        tenant_id: str,
+        conflict_id: str,
+        resolved_value: object,
+        resolved_by: str,
+        reason: str,
+    ) -> Conflict:
+        conflict = self.get_conflict(tenant_id, conflict_id)
+        if conflict.status == "resolved":
+            return conflict
+
+        now = datetime.now(UTC)
+        matching = [
+            candidate for candidate in conflict.candidates if candidate.value == resolved_value
+        ]
+        source_observation_ids = [
+            candidate.observation_id for candidate in matching if candidate.observation_id
+        ] or [
+            candidate.observation_id
+            for candidate in conflict.candidates
+            if candidate.observation_id
+        ]
+        confidence = max((candidate.confidence for candidate in matching), default=0.95)
+
+        state_key = (tenant_id, conflict.entity_type, conflict.entity_id)
+        state = self._states.get(state_key)
+        if state is not None:
+            before = self._attributes_for(state)
+            resolved_attribute = StateAttribute(
+                value=resolved_value,
+                confidence=confidence,
+                observed_at=now,
+                freshness="fresh",
+                source_observation_ids=source_observation_ids,
+                connector="operator",
+            )
+            attributes = dict(state.attributes)
+            attributes[conflict.attribute] = resolved_attribute
+            after = {
+                name: attribute.model_dump(mode="json") for name, attribute in attributes.items()
+            }
+            semantic_diff = self._diff(before, after)
+            commit = self._create_commit(
+                tenant_id=tenant_id,
+                entity_type=conflict.entity_type,
+                entity_id=conflict.entity_id,
+                cause=f"conflict_resolved:{conflict.conflict_id}",
+                observation_ids=[oid for oid in source_observation_ids if oid],
+                before=before,
+                after=after,
+                semantic_diff=semantic_diff,
+                assurance_level="operator_resolved",
+            )
+            self._states[state_key] = OrderState(
+                tenant_id=tenant_id,
+                entity_id=state.entity_id,
+                entity_type=state.entity_type,
+                state_version=state.state_version + 1,
+                attributes=attributes,
+                commit_id=commit.commit_id,
+            )
+
+        conflict.status = "resolved"
+        conflict.resolved_value = resolved_value
+        conflict.resolved_by = resolved_by
+        conflict.resolved_at = now
+        conflict.resolution_reason = reason
+        conflict_key = (tenant_id, conflict.entity_type, conflict.entity_id, conflict.attribute)
+        self._open_conflicts.pop(conflict_key, None)
+        return conflict
 
     def hydrate(
         self,
@@ -252,6 +455,7 @@ class WorldStateService:
                 observed_at=observation.observed_at,
                 freshness=freshness,
                 source_observation_ids=[observation.observation_id],
+                connector=observation.connector,
             )
             for name, value in observation.payload.items()
         }

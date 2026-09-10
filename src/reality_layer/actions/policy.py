@@ -12,6 +12,7 @@ def evaluate_policy(
     workspace_mode: str = "demo_proposal",
     order_value: float | None = None,
     value_limit: float | None = None,
+    has_conflict: bool = False,
     policy_version: str = "mvp-1",
 ) -> ActionDecision:
     if role not in {"observer", "operations", "finance", "system"}:
@@ -40,6 +41,18 @@ def evaluate_policy(
                 "proposing writes."
             ),
             matched_rule="deny.workspace.observe_only",
+            policy_version=policy_version,
+        )
+
+    if has_conflict:
+        return ActionDecision(
+            action_id=action_id,
+            status=ActionStatus.denied,
+            reason=(
+                "The target entity has an unresolved conflict between sources; "
+                "resolve it before proposing actions against it."
+            ),
+            matched_rule="deny.conflict.unresolved",
             policy_version=policy_version,
         )
 
