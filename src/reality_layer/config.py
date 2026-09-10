@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     verifier_max_attempts: int = 6
     verifier_timeout_seconds: float = 30.0
     verifier_sweep_interval_seconds: float = 5.0
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        # Managed hosts (Railway, Heroku, ...) expose a plain ``postgres://`` /
+        # ``postgresql://`` URL. SQLAlchemy would pick the psycopg2 driver for
+        # those; this project pins psycopg v3, so pin the driver explicitly.
+        for scheme in ("postgresql://", "postgres://"):
+            if value.startswith(scheme):
+                return "postgresql+psycopg://" + value[len(scheme) :]
+        return value
 
 
 @lru_cache

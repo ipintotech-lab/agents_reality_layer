@@ -67,6 +67,12 @@ The same three screens are visible in the dashboard at `/` while the loop runs
 
 ## 2. Live preflight
 
+The live path needs a persistent, connector-backed environment. To stand one up on
+Railway (managed Postgres, API + verifier services, persistent volume for raw
+payloads), follow [`deployment-railway.md`](deployment-railway.md) first, then run
+the steps below with `railway run --service reality-api reality ...` in place of the
+bare `reality ...` calls. Running locally against a local Postgres works too.
+
 Set connector credentials through the runtime secret mechanism. Do not place them in
 proof files, shell history, or committed `.env` files.
 
@@ -179,3 +185,29 @@ test data; rerun the five-run command to reset and validate the fallback path.
 For live rehearsals, do not reuse a cancelled order. Create or select a fresh,
 unfulfilled Shopify development order and a matching EasyPost test shipment before
 repeating the flow.
+
+## 7. Live demo go/no-go checklist
+
+Run through this immediately before presenting. Every row must be **yes** or the
+demo falls back to the recorded local proof bundle (§1).
+
+| # | Check | How | Pass condition |
+| --- | --- | --- | --- |
+| 1 | Environment is up | `curl $API/healthz` | `{"status":"ok",...}` |
+| 2 | Migrations current | deploy logs / `alembic current` | head revision (`20260910_0003` or later) |
+| 3 | Verifier running | `reality-verifier` service logs | periodic sweep lines, no crash loop |
+| 4 | Connectors authenticated | `reality preflight --tenant demo` | `"ready": true` |
+| 5 | Target order eligible | `reality preflight --tenant demo --order-id <id>` | `demo_order` check eligible, status `open`, unfulfilled |
+| 6 | Linked shipment present | `... --shipment-id <shp>` | `demo_shipment` check present |
+| 7 | Workspace observe-only | `reality workspace --tenant demo` | mode `observe_only` |
+| 8 | Bounded ingest clean | `reality observe shopify --tenant demo --limit 10 --persist` then `GET /v1/entities/order/<id>` | order visible with provenance, confidence, freshness, commit id |
+| 9 | Policy denies unauthorized write | agent `cancel_order` as observer role | `denied`, rule `deny.observer.write` |
+| 10 | Verification latency in budget | timed `reality verify --once` after a test proposal | `verified` within `REALITY_VERIFIER_TIMEOUT_SECONDS` (30s) |
+| 11 | Fallback proof on hand | `artifacts/rehearsal-proof.json` exists and ends `assurance_level=verified` | present |
+
+If checks 1–3 fail, the deployment is broken — fix it or present entirely from the
+fallback bundle. If 4–6 fail, the connector/order state is wrong — reseed. If
+10 fails, raise `REALITY_VERIFIER_TIMEOUT_SECONDS` or fall back.
+
+After the demo, immediately return the workspace to `observe_only` and do not reuse
+the cancelled order (§6).

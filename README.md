@@ -85,7 +85,8 @@ switch URLs to `postgresql+psycopg2://`.
 | --- | --- |
 | [`docs/reality-layer-technical-architecture.md`](docs/reality-layer-technical-architecture.md) | Full v2.0 technical architecture |
 | [`docs/mvp-design.md`](docs/mvp-design.md) | MVP scope, build plan, and technical decisions |
-| [`docs/demo-runbook.md`](docs/demo-runbook.md) | Local fallback and live demo operating procedure |
+| [`docs/demo-runbook.md`](docs/demo-runbook.md) | Local fallback and live demo operating procedure, incl. go/no-go checklist |
+| [`docs/deployment-railway.md`](docs/deployment-railway.md) | Standing up a persistent connector-backed environment on Railway |
 
 ## MVP at a glance
 

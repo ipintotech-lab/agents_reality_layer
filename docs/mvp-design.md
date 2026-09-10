@@ -32,7 +32,11 @@ The repository currently contains a working MVP prototype for:
   verification_divergence`) with per-step latency capture, proving the loop
   reaches a protective terminal status instead of a false `verified`;
 - repeatable local rehearsal tooling (`reality rehearse --runs N --summary`) with
-  isolated per-run state and no manual database repair between runs.
+  isolated per-run state and no manual database repair between runs;
+- Railway deployment config (`railway.toml`, `Procfile`) and an operator
+  procedure ([`deployment-railway.md`](deployment-railway.md)) for a persistent,
+  connector-backed environment — the deploy itself still requires the operator's
+  Railway account and credentials.
 
 The following are partial or planned rather than complete MVP capabilities:
 
