@@ -55,3 +55,29 @@ def test_mcp_adapter_keeps_tenant_boundaries() -> None:
     )
 
     assert adapter.get_world_state("tenant-b") == []
+
+
+def test_mcp_adapter_lists_gets_and_resolves_conflicts() -> None:
+    adapter = RealityMcpAdapter()
+    for connector, status in (("carrier-api", "delayed"), ("erp", "shipped")):
+        adapter._client.post(
+            "/v1/observations",
+            json={
+                "observation_id": f"obs_conflict_{connector}",
+                "connector": connector,
+                "object_type": "shipment",
+                "object_id": "shp-1",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "payload": {"id": "shp-1", "status": status},
+            },
+            headers={"X-Reality-Tenant": "tenant-c"},
+        )
+
+    conflicts = adapter.list_conflicts("tenant-c")
+    assert len(conflicts) == 1
+    conflict_id = conflicts[0]["conflict_id"]
+    assert adapter.get_conflict(conflict_id, "tenant-c")["attribute"] == "status"
+
+    resolved = adapter.resolve_conflict(conflict_id, "tenant-c", "shipped", "carrier lagged")
+    assert resolved["status"] == "resolved"
+    assert adapter.list_conflicts("tenant-c", "open") == []

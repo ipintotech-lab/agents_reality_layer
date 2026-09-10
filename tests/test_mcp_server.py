@@ -28,6 +28,9 @@ def test_mcp_server_exposes_the_adapter_tool_contract() -> None:
         "get_action_status",
         "get_proof",
         "diff_since",
+        "list_conflicts",
+        "get_conflict",
+        "resolve_conflict",
     }
 
 
@@ -75,6 +78,48 @@ def test_mcp_server_tools_round_trip_through_the_rest_contract() -> None:
         {"action_id": decision["action_id"], "tenant_id": "tenant-mcp-server"},
     )
     assert status["decision"]["action_id"] == decision["action_id"]
+
+
+def test_mcp_server_lists_and_resolves_conflicts() -> None:
+    server = build_server()
+    adapter = server.adapter  # type: ignore[attr-defined]
+    headers = {"X-Reality-Tenant": "tenant-conflict"}
+
+    for connector, status in (("carrier-api", "delayed"), ("erp", "shipped")):
+        adapter._client.post(
+            "/v1/observations",
+            json={
+                "observation_id": f"obs_{connector}",
+                "connector": connector,
+                "object_type": "shipment",
+                "object_id": "shp-mcp-1",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "payload": {"id": "shp-mcp-1", "status": status},
+            },
+            headers=headers,
+        )
+
+    conflicts = _call(server, "list_conflicts", {"tenant_id": "tenant-conflict"})
+    assert len(conflicts) == 1
+    conflict_id = conflicts[0]["conflict_id"]
+
+    fetched = _call(
+        server, "get_conflict", {"conflict_id": conflict_id, "tenant_id": "tenant-conflict"}
+    )
+    assert fetched["attribute"] == "status"
+
+    resolved = _call(
+        server,
+        "resolve_conflict",
+        {
+            "conflict_id": conflict_id,
+            "tenant_id": "tenant-conflict",
+            "resolved_value": "shipped",
+            "reason": "carrier lagged",
+        },
+    )
+    assert resolved["status"] == "resolved"
+    assert _call(server, "list_conflicts", {"tenant_id": "tenant-conflict", "status": "open"}) == []
 
 
 @pytest.fixture

@@ -69,4 +69,25 @@ def build_server(
         """Return World State commits/diffs for a tenant since a given commit."""
         return adapter.diff_since(tenant_id, since_commit)
 
+    @mcp.tool()
+    def list_conflicts(tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
+        """List cross-source World State conflicts for a tenant (optionally filtered by status)."""
+        return adapter.list_conflicts(tenant_id, status)
+
+    @mcp.tool()
+    def get_conflict(conflict_id: str, tenant_id: str) -> dict[str, Any]:
+        """Fetch one World State conflict, including its competing source candidates."""
+        return adapter.get_conflict(conflict_id, tenant_id)
+
+    @mcp.tool()
+    def resolve_conflict(
+        conflict_id: str,
+        tenant_id: str,
+        resolved_value: Any,
+        reason: str,
+        role: str = "operations",
+    ) -> dict[str, Any]:
+        """Resolve a conflict to an operator-chosen value, producing a hash-linked commit."""
+        return adapter.resolve_conflict(conflict_id, tenant_id, resolved_value, reason, role)
+
     return mcp

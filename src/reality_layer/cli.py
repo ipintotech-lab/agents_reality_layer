@@ -460,3 +460,86 @@ def mcp_server(
 
     server = build_server(base_url=api_url, host=host, port=port)
     server.run(transport=transport)  # type: ignore[arg-type]
+
+
+conflicts_app = typer.Typer(help="Inspect and resolve cross-source World State conflicts.")
+app.add_typer(conflicts_app, name="conflicts")
+
+_CONFLICTS_API_URL = typer.Option(
+    "http://127.0.0.1:8000",
+    "--api-url",
+    help="Base URL of a running `reality serve` deployment.",
+)
+
+
+@conflicts_app.command("list")
+def conflicts_list(
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    status: str | None = typer.Option(None, help="Filter by status, e.g. open or resolved."),
+    api_url: str = _CONFLICTS_API_URL,
+) -> None:
+    """List conflicts for a tenant."""
+    import json
+
+    from reality_layer.mcp import RealityMcpAdapter
+
+    adapter = RealityMcpAdapter(base_url=api_url)
+    typer.echo(json.dumps(adapter.list_conflicts(tenant, status), indent=2, sort_keys=True))
+
+
+@conflicts_app.command("show")
+def conflicts_show(
+    conflict_id: Annotated[str, typer.Argument(help="Conflict identifier.")],
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    api_url: str = _CONFLICTS_API_URL,
+) -> None:
+    """Show one conflict and its competing source candidates."""
+    import json
+
+    import httpx
+
+    from reality_layer.mcp import RealityMcpAdapter
+
+    adapter = RealityMcpAdapter(base_url=api_url)
+    try:
+        conflict = adapter.get_conflict(conflict_id, tenant)
+    except httpx.HTTPStatusError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(conflict, indent=2, sort_keys=True))
+
+
+@conflicts_app.command("resolve")
+def conflicts_resolve(
+    conflict_id: Annotated[str, typer.Argument(help="Conflict identifier.")],
+    value: Annotated[str, typer.Option("--value", help="Operator-chosen resolved value.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why this value was chosen.")],
+    tenant: str = typer.Option("demo", help="Tenant identifier."),
+    role: str = typer.Option("operations", help="Acting role: operations, admin, or system."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Parse --value as a JSON literal instead of a string."
+    ),
+    api_url: str = _CONFLICTS_API_URL,
+) -> None:
+    """Resolve a conflict to an operator-chosen value, producing a hash-linked commit."""
+    import json
+
+    import httpx
+
+    from reality_layer.mcp import RealityMcpAdapter
+
+    resolved_value: object = value
+    if as_json:
+        try:
+            resolved_value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            typer.echo(f"--value is not valid JSON: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+
+    adapter = RealityMcpAdapter(base_url=api_url)
+    try:
+        resolved = adapter.resolve_conflict(conflict_id, tenant, resolved_value, reason, role)
+    except httpx.HTTPStatusError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(resolved, indent=2, sort_keys=True))

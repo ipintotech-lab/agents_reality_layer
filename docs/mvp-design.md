@@ -576,6 +576,7 @@ The MVP does not require Kafka, a graph database, Redis, Kubernetes, or microser
 - `get_action_status`
 - `get_proof`
 - `diff_since`
+- `list_conflicts`, `get_conflict`, `resolve_conflict` (post-MVP Phase 9)
 
 The MCP adapter authenticates to the same tenant and role model and calls the same application services as REST. It must not have direct database or connector access.
 
@@ -722,7 +723,7 @@ test environments during demo preflight.
 | 6 — Verify | Polling read-after-write, verification observation, proof bundle, assurance level | Full loop ends in `verified` | Complete |
 | 7 — Integrate | MCP adapter, agent script, three-screen polish | Agent completes scripted demo through public contracts | Complete (`RealityMcpAdapter` for in-process use; `reality mcp-server` runs it as a real network MCP server over stdio/SSE/streamable-HTTP) |
 | 8 — Rehearse | Seed/reset tooling, runbook, latency tests, failure injection, fallback recording | Five consecutive three-to-four-minute rehearsals succeed | Complete against the local fallback path; live-service dress rehearsal pending credentials |
-| 9 — Conflicts (post-MVP) | Cross-source conflict detection on attribute merge, `Conflict`/`ConflictCandidate` model, policy gate denying proposals on conflicted entities, `GET/POST /v1/conflicts` API | Two sources disagreeing on a still-fresh attribute is surfaced as an open conflict, blocks proposals against that entity, and an operator resolution produces a hash-linked commit | Complete (in-memory only, not Postgres-backed; no CLI or MCP tool surface yet) |
+| 9 — Conflicts (post-MVP) | Cross-source conflict detection on attribute merge, `Conflict`/`ConflictCandidate` model, policy gate denying proposals on conflicted entities, `GET/POST /v1/conflicts` API, `reality conflicts` CLI, `list_conflicts`/`get_conflict`/`resolve_conflict` MCP tools | Two sources disagreeing on a still-fresh attribute is surfaced as an open conflict, blocks proposals against that entity, and an operator resolution produces a hash-linked commit | Complete (in-memory only, not Postgres-backed) |
 
 Local fallback status (2026-09-08): five consecutive `reality rehearse --runs 5`
 batches each reached `assurance_level=verified` for every loop; the deterministic

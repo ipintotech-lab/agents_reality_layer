@@ -108,6 +108,38 @@ class RealityMcpAdapter:
         )
         return cast(dict[str, Any], self._result(response))
 
+    def list_conflicts(
+        self, tenant_id: str, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        response = self._client.get(
+            "/v1/conflicts",
+            params={"status": status} if status else None,
+            headers=self._headers(tenant_id),
+        )
+        return cast(list[dict[str, Any]], self._result(response))
+
+    def get_conflict(self, conflict_id: str, tenant_id: str) -> dict[str, Any]:
+        response = self._client.get(
+            f"/v1/conflicts/{conflict_id}",
+            headers=self._headers(tenant_id),
+        )
+        return cast(dict[str, Any], self._result(response))
+
+    def resolve_conflict(
+        self,
+        conflict_id: str,
+        tenant_id: str,
+        resolved_value: Any,
+        reason: str,
+        role: str = "operations",
+    ) -> dict[str, Any]:
+        response = self._client.post(
+            f"/v1/conflicts/{conflict_id}/resolve",
+            json={"resolved_value": resolved_value, "reason": reason},
+            headers=self._headers(tenant_id, role),
+        )
+        return cast(dict[str, Any], self._result(response))
+
     def diff_since(
         self, tenant_id: str, since_commit: str | None = None
     ) -> list[dict[str, Any]]:
