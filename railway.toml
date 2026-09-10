@@ -1,16 +1,13 @@
 # Railway service configuration for the Reality Layer API.
 #
 # This file configures the *web* service. The verifier is a second Railway
-# service deployed from the same repo with its start command overridden to
-# `reality verify` (see docs/deployment-railway.md).
+# service deployed from the same repo/image with its start command overridden to
+# `reality verify` in the service settings (see docs/deployment-railway.md).
 
 [build]
-builder = "nixpacks"
-
-# Install the package itself (not just its dependencies) so the `reality` entry
-# point is on PATH and `reality_layer` is importable by alembic/env.py.
-[build.nixpacksPlan.phases.install]
-cmds = ["python -m pip install --upgrade pip", "python -m pip install ."]
+# Nixpacks is no longer a selectable Railway builder; the repo ships a Dockerfile
+# that installs the package so `reality` / `alembic` are on PATH.
+builder = "DOCKERFILE"
 
 [deploy]
 startCommand = "reality serve --host 0.0.0.0 --port $PORT"

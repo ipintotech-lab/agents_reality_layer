@@ -1,0 +1,21 @@
+# Image for the `reality-verifier` Railway service. Same build as the API image,
+# different default command. The verifier service sets
+# `RAILWAY_DOCKERFILE_PATH=Dockerfile.verifier` (Railway cannot set a per-service
+# start command from the CLI, and railway.toml's [deploy] is ignored for
+# Dockerfile deploys). It must NOT set RUN_MIGRATIONS — migrations belong to the
+# API image only, to avoid two services racing on the same DDL.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+COPY . .
+RUN pip install --upgrade pip && pip install .
+
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["reality", "verify"]
