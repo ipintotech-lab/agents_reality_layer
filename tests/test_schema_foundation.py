@@ -26,6 +26,11 @@ MVP_TABLES = {
     "policy_version",
 }
 
+#: Tables added after the investor MVP scope was frozen (see docs/mvp-design.md Phase 9+).
+POST_MVP_TABLES = {
+    "conflict",
+}
+
 APPEND_ONLY_TABLES = {
     "observation_log",
     "commit_log",
@@ -35,7 +40,7 @@ APPEND_ONLY_TABLES = {
 
 
 def test_models_match_investor_mvp_table_set() -> None:
-    assert set(Base.metadata.tables) == MVP_TABLES
+    assert set(Base.metadata.tables) == MVP_TABLES | POST_MVP_TABLES
 
 
 def test_all_mvp_tables_are_tenant_scoped() -> None:

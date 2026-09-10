@@ -4,7 +4,13 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from reality_layer.db.models import ActionEvent, CommitLog, ObservationLog, StateProjection
+from reality_layer.db.models import (
+    ActionEvent,
+    CommitLog,
+    ConflictRecord,
+    ObservationLog,
+    StateProjection,
+)
 
 
 def tenant_select(model: Any, tenant_id: str) -> Select[Any]:
@@ -94,6 +100,59 @@ class CommitRepository:
             .limit(1)
         )
         return self.session.scalars(statement).first()
+
+
+class ConflictRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, tenant_id: str, conflict_id: str) -> ConflictRecord | None:
+        return self.session.scalars(
+            tenant_get_by_id(ConflictRecord, tenant_id, "conflict_id", conflict_id)
+        ).first()
+
+    def list_for_tenant(
+        self, tenant_id: str, status: str | None = None
+    ) -> Sequence[ConflictRecord]:
+        statement = tenant_select(ConflictRecord, tenant_id)
+        if status is not None:
+            statement = statement.where(ConflictRecord.status == status)
+        return self.session.scalars(
+            statement.order_by(ConflictRecord.detected_at.asc(), ConflictRecord.conflict_id.asc())
+        ).all()
+
+    def list_open_for_entity(
+        self, tenant_id: str, entity_type: str, entity_id: str
+    ) -> Sequence[ConflictRecord]:
+        statement = (
+            tenant_select(ConflictRecord, tenant_id)
+            .where(ConflictRecord.entity_type == entity_type)
+            .where(ConflictRecord.entity_id == entity_id)
+            .where(ConflictRecord.status == "open")
+        )
+        return self.session.scalars(statement).all()
+
+    def save(self, conflict: ConflictRecord) -> ConflictRecord:
+        existing = self.get(conflict.tenant_id, conflict.conflict_id)
+        if existing is not None:
+            for column in (
+                "entity_type",
+                "entity_id",
+                "attribute",
+                "candidates",
+                "status",
+                "detected_at",
+                "resolved_value",
+                "resolved_by",
+                "resolved_at",
+                "resolution_reason",
+            ):
+                setattr(existing, column, getattr(conflict, column))
+            conflict = existing
+        else:
+            self.session.add(conflict)
+        self.session.flush()
+        return conflict
 
 
 class ActionEventRepository:

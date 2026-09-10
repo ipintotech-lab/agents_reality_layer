@@ -181,6 +181,30 @@ class ActionEvent(TenantMixin, Base):
     )
 
 
+class ConflictRecord(TenantMixin, Base):
+    __tablename__ = "conflict"
+
+    conflict_id: Mapped[str] = mapped_column(String(64))
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    attribute: Mapped[str] = mapped_column(String(255), nullable=False)
+    candidates: Mapped[JsonArray] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", index=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolved_value: Mapped[Any | None] = mapped_column(JSONB)
+    resolved_by: Mapped[str | None] = mapped_column(String(255))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_reason: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "conflict_id", name="pk_conflict"),
+        Index("ix_conflict_entity", "tenant_id", "entity_type", "entity_id"),
+    )
+
+
 class PolicyVersion(TenantMixin, Base):
     __tablename__ = "policy_version"
 

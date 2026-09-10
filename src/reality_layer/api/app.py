@@ -65,6 +65,15 @@ def create_app(
         for event in action_service.events(action_id, tenant_id):
             persistence.persist(event)
 
+    def hydrate_conflicts(tenant_id: str, session: Session) -> None:
+        for conflict in CompilerPersistenceService(session).list_conflicts(tenant_id):
+            world_state_service.hydrate_conflict(conflict)
+
+    def persist_conflicts(tenant_id: str, session: Session) -> None:
+        compiler = CompilerPersistenceService(session)
+        for conflict in world_state_service.list_conflicts(tenant_id):
+            compiler.persist_conflict(conflict)
+
     def resolve_order_state(tenant_id: str, order_id: str) -> OrderState | None:
         if app_settings.persistence_enabled:
             session = make_session()
@@ -221,12 +230,14 @@ def create_app(
             if not persisted.created and existing is not None:
                 session.commit()
                 return existing
+            hydrate_conflicts(x_reality_tenant, session)
             state = world_state_service.ingest(x_reality_tenant, observation)
             if persisted.created:
                 compiler.persist(
                     state,
                     world_state_service.get_commit_for_state(x_reality_tenant, state),
                 )
+                persist_conflicts(x_reality_tenant, session)
             session.commit()
             return state
         except (OSError, SQLAlchemyError, ValueError):
@@ -406,6 +417,14 @@ def create_app(
         entity_type, _, entity_id = target_entity.partition(":")
         if not entity_id:
             return False
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                return CompilerPersistenceService(session).has_open_conflict_for_entity(
+                    tenant_id, entity_type, entity_id
+                )
+            finally:
+                session.close()
         return world_state_service.has_open_conflicts(tenant_id, entity_type, entity_id)
 
     @app.get("/v1/conflicts", response_model=list[Conflict])
@@ -413,6 +432,14 @@ def create_app(
         status: str | None = None,
         x_reality_tenant: str = Header(default="demo"),
     ) -> list[Conflict]:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                return CompilerPersistenceService(session).list_conflicts(
+                    x_reality_tenant, status
+                )
+            finally:
+                session.close()
         return world_state_service.list_conflicts(x_reality_tenant, status)
 
     @app.get("/v1/conflicts/{conflict_id}", response_model=Conflict)
@@ -420,6 +447,19 @@ def create_app(
         conflict_id: str,
         x_reality_tenant: str = Header(default="demo"),
     ) -> Conflict:
+        if app_settings.persistence_enabled:
+            session = make_session()
+            try:
+                stored = CompilerPersistenceService(session).load_conflict(
+                    x_reality_tenant, conflict_id
+                )
+            finally:
+                session.close()
+            if stored is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Unknown conflict: {conflict_id}"
+                )
+            return stored
         try:
             return world_state_service.get_conflict(x_reality_tenant, conflict_id)
         except KeyError as exc:
@@ -437,16 +477,69 @@ def create_app(
                 status_code=403,
                 detail="Only operations, admin, or system may resolve a conflict.",
             )
+        if not app_settings.persistence_enabled:
+            try:
+                return world_state_service.resolve_conflict(
+                    x_reality_tenant,
+                    conflict_id,
+                    request.resolved_value,
+                    x_reality_role,
+                    request.reason,
+                )
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        session = make_session()
         try:
-            return world_state_service.resolve_conflict(
+            compiler = CompilerPersistenceService(session)
+            stored = compiler.load_conflict(x_reality_tenant, conflict_id)
+            if stored is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Unknown conflict: {conflict_id}"
+                )
+            if stored.status == "resolved":
+                return stored
+
+            existing = compiler.load_state(
+                x_reality_tenant, f"{stored.entity_type}:{stored.entity_id}"
+            )
+            if existing is not None:
+                previous_commit = (
+                    compiler.load_commit(x_reality_tenant, existing.commit_id)
+                    if existing.commit_id
+                    else None
+                )
+                world_state_service.hydrate(
+                    existing,
+                    existing.commit_id,
+                    previous_commit.hash if previous_commit else None,
+                )
+            world_state_service.hydrate_conflict(stored)
+
+            resolved = world_state_service.resolve_conflict(
                 x_reality_tenant,
                 conflict_id,
                 request.resolved_value,
                 x_reality_role,
                 request.reason,
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+            if existing is not None:
+                new_state = world_state_service.get_entity(
+                    x_reality_tenant, stored.entity_type, stored.entity_id
+                )
+                compiler.persist(
+                    new_state,
+                    world_state_service.get_commit_for_state(x_reality_tenant, new_state),
+                )
+            compiler.persist_conflict(resolved)
+            session.commit()
+            return resolved
+        except SQLAlchemyError:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     @app.post("/v1/actions", response_model=ActionDecision, status_code=201)
     def propose_action(

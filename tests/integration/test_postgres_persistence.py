@@ -117,3 +117,75 @@ def test_persisted_workspace_starts_observe_only_and_operator_enables_proposals(
             "/v1/actions", json=proposal, headers={**headers, "X-Reality-Role": "operations"}
         ).json()
         assert allowed["status"] == "approval_required"
+
+
+def test_persisted_conflicts_survive_and_resolve(
+    postgres_session_factory: sessionmaker[Session],
+) -> None:
+    tenant_id = "postgres-conflicts"
+    app = create_app(
+        Settings(
+            database_url=os.environ["REALITY_TEST_DATABASE_URL"],
+            persistence_enabled=True,
+        ),
+        session_factory=postgres_session_factory,
+    )
+
+    headers = {"X-Reality-Tenant": tenant_id}
+    base_observation = {
+        "object_type": "order",
+        "object_id": "conflict-order",
+        "payload": {"id": "conflict-order", "status": "open"},
+    }
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/v1/observations",
+            json={
+                **base_observation,
+                "observation_id": "obs_conflict_shopify",
+                "connector": "shopify",
+                "observed_at": datetime.now(UTC).isoformat(),
+            },
+            headers=headers,
+        )
+        assert first.status_code == 201
+
+        second = client.post(
+            "/v1/observations",
+            json={
+                **base_observation,
+                "observation_id": "obs_conflict_erp",
+                "connector": "erp",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "payload": {"id": "conflict-order", "status": "cancelled"},
+            },
+            headers=headers,
+        )
+        assert second.status_code == 201
+
+    # A fresh app instance proves the conflict was persisted, not held in memory.
+    reopened = create_app(
+        Settings(
+            database_url=os.environ["REALITY_TEST_DATABASE_URL"],
+            persistence_enabled=True,
+        ),
+        session_factory=postgres_session_factory,
+    )
+    with TestClient(reopened) as client:
+        open_conflicts = client.get("/v1/conflicts?status=open", headers=headers).json()
+        assert len(open_conflicts) == 1
+        conflict_id = open_conflicts[0]["conflict_id"]
+
+        resolved = client.post(
+            f"/v1/conflicts/{conflict_id}/resolve",
+            json={"resolved_value": "cancelled", "reason": "ERP is authoritative"},
+            headers={**headers, "X-Reality-Role": "operations"},
+        )
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+
+        assert client.get("/v1/conflicts?status=open", headers=headers).json() == []
+        persisted = client.get(f"/v1/conflicts/{conflict_id}", headers=headers).json()
+        assert persisted["status"] == "resolved"
+        assert persisted["resolved_value"] == "cancelled"

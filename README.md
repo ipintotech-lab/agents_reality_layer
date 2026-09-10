@@ -29,8 +29,9 @@ durable `observe_only` <-> `demo_proposal` workspace mode transitions.
 Post-MVP, a Phase 9 has also landed: cross-source conflict detection on World State
 attribute merge, a `GET/POST /v1/conflicts` API, and a policy gate that denies proposals
 against an entity with an unresolved conflict, surfaced through a `reality conflicts` CLI
-and `list_conflicts`/`get_conflict`/`resolve_conflict` MCP tools. It is in-memory only
-(not Postgres-backed like commits and state projections).
+and `list_conflicts`/`get_conflict`/`resolve_conflict` MCP tools. Conflicts are
+Postgres-backed (a `conflict` table) when persistence is enabled, so they survive
+process restarts and are shared across workers.
 
 The following remain partial or planned: field-level permission filtering and ABAC,
 durable HITL expiry/delegation/supersession, an agent SDK, complete connector

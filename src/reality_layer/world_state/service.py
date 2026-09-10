@@ -282,6 +282,19 @@ class WorldStateService:
         self._open_conflicts.pop(conflict_key, None)
         return conflict
 
+    def hydrate_conflict(self, conflict: Conflict) -> None:
+        self._conflicts_by_id[(conflict.tenant_id, conflict.conflict_id)] = conflict
+        conflict_key = (
+            conflict.tenant_id,
+            conflict.entity_type,
+            conflict.entity_id,
+            conflict.attribute,
+        )
+        if conflict.status == "open":
+            self._open_conflicts[conflict_key] = conflict
+        else:
+            self._open_conflicts.pop(conflict_key, None)
+
     def hydrate(
         self,
         state: OrderState,
