@@ -118,22 +118,24 @@ now that the service is live.
 
 ## 4. Deploy `reality-verifier`
 
-Add a second service from the same repo. Override its start command:
+Add a second service from the same repo. The CLI cannot set a per-service start
+command, so the verifier builds from its own `Dockerfile.verifier`
+(`CMD ["reality", "verify"]`):
 
+```bash
+railway variables --service reality-verifier --set RAILWAY_DOCKERFILE_PATH=Dockerfile.verifier
+railway up --service reality-verifier
 ```
-reality verify
-```
 
-Give it the **same** environment variables as `reality-api` **except** it does not
-serve HTTP and does not need the volume (it only reads/writes Postgres). Disable
-its healthcheck (no port). It shares `REALITY_DATABASE_URL` with the API.
+Give it the **same** environment variables as `reality-api` **except**:
 
-Set its start command in the Railway service settings (railway.toml's
-`startCommand` only covers the API): **Settings → Deploy → Custom Start Command →
-`reality verify`**. The CLI cannot set a per-service start command.
+- it does **not** serve HTTP and does not need `PORT`, a domain, or the volume;
+- it must **not** set `RUN_MIGRATIONS` — migrations belong to the API image only,
+  so the two services never race on the same DDL.
 
-Do **not** put `alembic upgrade head` on this service — migrations belong to the
-API's `preDeployCommand` only, to avoid two services racing on the same DDL.
+It shares `REALITY_DATABASE_URL` with the API. `reality verify` runs
+`worker.run_forever()`; the process logs little when idle — a `RUNNING` instance
+with no crash-restarts is the healthy state.
 
 ## 5. Post-deploy smoke test
 
