@@ -1,0 +1,3 @@
+[submodule "efficient-sponsorship-app"]
+	path = efficient-sponsorship-app
+	url = ./efficient-sponsorship-app
