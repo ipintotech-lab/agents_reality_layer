@@ -63,6 +63,19 @@ may propose writes. Without persistence, the demo runtime falls back to an expli
 
 AI agents can call APIs, but API access alone does not make their actions trustworthy. The Reality Layer maintains an observed, permission-aware World State and mediates agent actions through policy, human approval, idempotent execution, external verification, and auditable evidence.
 
+### 1.1 Architectural direction change
+
+The MVP remains compatible with the current central-executor flow, but the long-term target architecture is now a Verified Reality + Policy/Proof model. In that model, Reality Layer becomes the authority for:
+
+- World State truth and provenance;
+- deterministic policy evaluation;
+- signed Capability Token issuance when a decision allows an action;
+- verification of externally executed work and final proof reporting.
+
+This preserves the existing local MVP while separating policy and proof from direct execution. Execution can remain with the customer or agent, but the Reality Layer must still verify and record the resulting state change before the action is considered proven.
+
+The detailed rollout plan is documented in [`verified-reality-policy-proof-plan.md`](verified-reality-policy-proof-plan.md).
+
 The MVP must prove one complete loop:
 
 ```text

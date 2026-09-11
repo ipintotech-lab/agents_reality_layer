@@ -84,9 +84,31 @@ switch URLs to `postgresql+psycopg2://`.
 | Doc | Purpose |
 | --- | --- |
 | [`docs/reality-layer-technical-architecture.md`](docs/reality-layer-technical-architecture.md) | Full v2.0 technical architecture |
+| [`docs/verified-reality-policy-proof-plan.md`](docs/verified-reality-policy-proof-plan.md) | Architecture evolution plan for Verified Reality + Policy/Proof and Capability Token issuance |
 | [`docs/mvp-design.md`](docs/mvp-design.md) | MVP scope, build plan, and technical decisions |
 | [`docs/demo-runbook.md`](docs/demo-runbook.md) | Local fallback and live demo operating procedure, incl. go/no-go checklist |
 | [`docs/deployment-railway.md`](docs/deployment-railway.md) | Standing up a persistent connector-backed environment on Railway |
+
+## Architecture direction
+
+The current MVP still supports the central-executor model as a compatibility path, but the preferred architecture is now a Verified Reality + Policy/Proof model:
+
+```text
+Agent → propose → Reality Layer (World State + Policy + Decision/Token)
+                ↓
+         Agent / Customer Executor → External Systems
+                ↓
+         Reality Layer ← verification / proof report
+```
+
+This preserves the existing demo behavior while making the long-term trust model explicit:
+
+- Reality Layer owns the observed truth, policy evaluation, and proof trail.
+- The customer or agent remains responsible for external execution in delegated mode.
+- Capability Tokens are short-lived, scoped, and signed policy artifacts.
+- Verification remains read-after-write and proof-backed.
+
+This pattern is the target model for the next phase of the product and is described in more detail in `docs/verified-reality-policy-proof-plan.md`.
 
 ## MVP at a glance
 
